@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWallet } from '@/contexts/WalletContext';
 import { supabase } from '@/lib/supabase';
 
 interface Activity {
@@ -11,6 +12,7 @@ interface Activity {
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const { balanceFp } = useWallet();
   const [recentTimes, setRecentTimes] = useState<any[]>([]);
   const [recentMessages, setRecentMessages] = useState<any[]>([]);
 
@@ -87,6 +89,17 @@ const Dashboard: React.FC = () => {
       color: 'from-orange-500 to-red-600',
       bgColor: 'bg-orange-500/10',
     },
+    {
+      label: 'Foxy Pesos (FP)',
+      value: balanceFp,
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a5 5 0 00-10 0v2M5 9h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1z" />
+        </svg>
+      ),
+      color: 'from-amber-500 to-yellow-500',
+      bgColor: 'bg-amber-500/10',
+    },
   ];
 
   return (
@@ -110,7 +123,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {statCards.map((stat, index) => (
           <div
             key={stat.label}

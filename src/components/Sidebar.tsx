@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWallet } from '@/contexts/WalletContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, onNavigate, onOpenAuth }) => {
   const { user, signOut } = useAuth();
+  const { balanceFp } = useWallet();
 
   const navItems = [
     {
@@ -47,6 +49,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, onNavig
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'wallet',
+      label: 'Wallet',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a5 5 0 00-10 0v2M5 9h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1z" />
         </svg>
       ),
     },
@@ -127,6 +138,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, onNavig
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    <p className="text-xs text-orange-400 mt-1">{balanceFp.toLocaleString()} FP</p>
                   </div>
                 </div>
                 <button

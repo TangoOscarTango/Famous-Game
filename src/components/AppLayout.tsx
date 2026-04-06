@@ -1,15 +1,18 @@
 // TimeQuest App - Mobile-first web application
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { WalletProvider, useWallet } from '@/contexts/WalletContext';
 import Sidebar from '@/components/Sidebar';
 import AuthModal from '@/components/AuthModal';
 import Dashboard from '@/components/Dashboard';
 import RandomTiming from '@/components/RandomTiming';
 import ZeldaGame from '@/components/ZeldaGame';
 import Chat from '@/components/Chat';
+import WalletHub from '@/components/WalletHub';
 
 const AppContent: React.FC = () => {
   const { loading } = useAuth();
+  const { balanceFp } = useWallet();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -39,6 +42,8 @@ const AppContent: React.FC = () => {
         return <ZeldaGame />;
       case 'chat':
         return <Chat />;
+      case 'wallet':
+        return <WalletHub />;
       default:
         return <Dashboard />;
     }
@@ -54,6 +59,8 @@ const AppContent: React.FC = () => {
         return 'The Game';
       case 'chat':
         return 'Chat';
+      case 'wallet':
+        return 'Wallet';
       default:
         return 'Dashboard';
     }
@@ -92,6 +99,9 @@ const AppContent: React.FC = () => {
 
             {/* Right side - can add notifications, etc */}
             <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30">
+                <span className="text-xs text-orange-300 font-medium">{balanceFp.toLocaleString()} FP</span>
+              </div>
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700/50">
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-xs text-gray-400">Online</span>
@@ -118,7 +128,9 @@ const AppContent: React.FC = () => {
 const AppLayout: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <WalletProvider>
+        <AppContent />
+      </WalletProvider>
     </AuthProvider>
   );
 };

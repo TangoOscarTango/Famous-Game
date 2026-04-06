@@ -14,7 +14,6 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
   signInWithMagicLink: (email: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
   updateUserStats: (stats: Partial<Pick<User, 'gamesPlayed' | 'messagesSent' | 'timesGenerated'>>) => Promise<void>;
@@ -118,27 +117,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const signInWithGoogle = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-      throw error;
-    }
-  };
-
   const signInWithMagicLink = async (email: string): Promise<{ success: boolean; message: string }> => {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: window.location.origin,
+          shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
       if (error) throw error;
@@ -183,7 +168,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithMagicLink, signOut, updateUserStats }}>
+    <AuthContext.Provider value={{ user, loading, signInWithMagicLink, signOut, updateUserStats }}>
       {children}
     </AuthContext.Provider>
   );

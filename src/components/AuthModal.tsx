@@ -7,12 +7,23 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { signInWithMagicLink } = useAuth();
+  const { signInWithGoogle, signInWithMagicLink, sendEmailCode, verifyEmailCode } = useAuth();
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [mode, setMode] = useState<'magic-link' | 'email-code'>('magic-link');
+  const [codeRequested, setCodeRequested] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   if (!isOpen) return null;
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setMessage(null);
+    const result = await signInWithGoogle();
+    setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+    setLoading(false);
+  };
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +38,37 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
     if (result.success) {
       setEmail('');
+    }
+  };
+
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    setLoading(true);
+    setMessage(null);
+    const result = await sendEmailCode(email);
+    setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+    setLoading(false);
+
+    if (result.success) {
+      setCodeRequested(true);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !code.trim()) return;
+
+    setLoading(true);
+    setMessage(null);
+    const result = await verifyEmailCode(email, code);
+    setMessage({ type: result.success ? 'success' : 'error', text: result.message });
+    setLoading(false);
+
+    if (result.success) {
+      setCode('');
+      onClose();
     }
   };
 
@@ -66,51 +108,142 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             <p className="text-gray-400">Sign in to access all features</p>
           </div>
 
-          {/* Magic Link Form */}
-          <form onSubmit={handleMagicLink} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-                Email address
-              </label>
-              <input
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
-                required
-              />
-            </div>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full px-4 py-3 bg-white hover:bg-gray-100 text-gray-900 font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+          >
+            Continue with Google
+          </button>
 
-            {message && (
-              <div className={`p-3 rounded-lg text-sm ${
-                message.type === 'success' 
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
-              }`}>
-                {message.text}
-              </div>
-            )}
-
+          <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-gray-900/60 rounded-xl border border-gray-700/50">
             <button
-              type="submit"
-              disabled={loading || !email.trim()}
-              className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              onClick={() => {
+                setMode('magic-link');
+                setCodeRequested(false);
+                setCode('');
+                setMessage(null);
+              }}
+              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                mode === 'magic-link' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'
+              }`}
             >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Sending...
-                </span>
-              ) : (
-                'Send Magic Link'
-              )}
+              Magic Link
             </button>
-          </form>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('email-code');
+                setMessage(null);
+              }}
+              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                mode === 'email-code' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'
+              }`}
+            >
+              Email Code
+            </button>
+          </div>
+
+          {mode === 'magic-link' ? (
+            <form onSubmit={handleMagicLink} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                  required
+                />
+              </div>
+
+              {message && (
+                <div className={`p-3 rounded-lg text-sm ${
+                  message.type === 'success'
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                    : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                }`}>
+                  {message.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || !email.trim()}
+                className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Sending...' : 'Send Magic Link'}
+              </button>
+            </form>
+          ) : (
+            <>
+              <form onSubmit={handleSendCode} className="space-y-4 mb-3">
+                <div>
+                  <label htmlFor="email-code-email" className="block text-sm font-medium text-gray-300 mb-2">
+                    Email address
+                  </label>
+                  <input
+                    type="email"
+                    id="email-code-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading || !email.trim()}
+                  className="w-full px-4 py-3 bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Sending...' : 'Send Verification Code'}
+                </button>
+              </form>
+
+              {codeRequested && (
+                <form onSubmit={handleVerifyCode} className="space-y-4">
+                  <div>
+                    <label htmlFor="email-code-token" className="block text-sm font-medium text-gray-300 mb-2">
+                      Verification code
+                    </label>
+                    <input
+                      type="text"
+                      id="email-code-token"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      placeholder="Enter email code"
+                      className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !code.trim() || !email.trim()}
+                    className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white font-medium rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Verifying...' : 'Verify Code'}
+                  </button>
+                </form>
+              )}
+            </>
+          )}
+
+          {message && mode === 'email-code' && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              message.type === 'success'
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+            }`}>
+              {message.text}
+            </div>
+          )}
 
           <p className="mt-6 text-center text-xs text-gray-500">
             By signing in, you agree to our Terms of Service and Privacy Policy

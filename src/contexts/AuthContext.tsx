@@ -14,7 +14,10 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  signInWithGoogle: () => Promise<{ success: boolean; message: string }>;
   signInWithMagicLink: (email: string) => Promise<{ success: boolean; message: string }>;
+  sendEmailCode: (email: string) => Promise<{ success: boolean; message: string }>;
+  verifyEmailCode: (email: string, code: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
   updateUserStats: (stats: Partial<Pick<User, 'gamesPlayed' | 'messagesSent' | 'timesGenerated'>>) => Promise<void>;
 }
@@ -117,6 +120,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const signInWithGoogle = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
+      return { success: true, message: 'Redirecting to Google...' };
+    } catch (error: any) {
+      console.error('Error signing in with Google:', error);
+      return { success: false, message: error.message || 'Google sign-in failed' };
+    }
+  };
+
   const signInWithMagicLink = async (email: string): Promise<{ success: boolean; message: string }> => {
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -131,6 +151,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error: any) {
       console.error('Error sending magic link:', error);
       return { success: false, message: error.message || 'Failed to send magic link' };
+    }
+  };
+
+  const sendEmailCode = async (email: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+
+      if (error) throw error;
+      return { success: true, message: 'Verification code sent to your email.' };
+    } catch (error: any) {
+      console.error('Error sending email code:', error);
+      return { success: false, message: error.message || 'Failed to send verification code' };
+    }
+  };
+
+  const verifyEmailCode = async (email: string, code: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email',
+      });
+
+      if (error) throw error;
+      return { success: true, message: 'Sign-in successful.' };
+    } catch (error: any) {
+      console.error('Error verifying email code:', error);
+      return { success: false, message: error.message || 'Invalid verification code' };
     }
   };
 
@@ -168,7 +221,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithMagicLink, signOut, updateUserStats }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signInWithGoogle,
+        signInWithMagicLink,
+        sendEmailCode,
+        verifyEmailCode,
+        signOut,
+        updateUserStats,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

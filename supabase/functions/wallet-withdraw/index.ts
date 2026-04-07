@@ -1,14 +1,52 @@
 import { CashuMint, CashuWallet, getEncodedTokenV4, type Proof } from 'npm:@cashu/cashu-ts';
-import {
-  authenticateRequest,
-  badRequest,
-  corsHeaders,
-  createServiceClient,
-  ok,
-  safeJson,
-  serverError,
-  unauthorized,
-} from '../_shared/common.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const getEnv = (name: string): string => {
+  const value = Deno.env.get(name);
+  if (!value) throw new Error(`Missing environment variable: ${name}`);
+  return value;
+};
+
+const createAuthClient = (authHeader: string | null) => {
+  const supabaseUrl = getEnv('SUPABASE_URL');
+  const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader ?? '' } },
+  });
+};
+
+const createServiceClient = () => {
+  const supabaseUrl = getEnv('SUPABASE_URL');
+  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+};
+
+const authenticateRequest = async (req: Request) => {
+  const authHeader = req.headers.get('Authorization');
+  const authClient = createAuthClient(authHeader);
+  const { data, error } = await authClient.auth.getUser();
+  if (error || !data?.user) throw new Error('Unauthorized');
+  return data.user;
+};
+
+const safeJson = async (req: Request) => {
+  try { return await req.json(); } catch { return {}; }
+};
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
 const assertUnspentProofs = async (wallet: CashuWallet, proofs: Proof[]) => {
   const states = await wallet.checkProofsStates(proofs);
@@ -18,7 +56,7 @@ const assertUnspentProofs = async (wallet: CashuWallet, proofs: Proof[]) => {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (req.method !== 'POST') return badRequest('Method not allowed');
+  if (req.method !== 'POST') return json(400, { error: 'Method not allowed' });
 
   let requestId = crypto.randomUUID();
   let userId: string | null = null;
@@ -33,7 +71,7 @@ Deno.serve(async (req) => {
     const amountSats = Number(body.amountSats);
 
     if (!Number.isFinite(amountSats) || amountSats <= 0) {
-      return badRequest('amountSats must be a positive number');
+      return json(400, { error: 'amountSats must be a positive number' });
     }
 
     const service = createServiceClient();
@@ -43,9 +81,9 @@ Deno.serve(async (req) => {
       p_amount_sats: Math.floor(amountSats),
     });
 
-    if (reserveError) return badRequest(reserveError.message);
+    if (reserveError) return json(400, { error: reserveError.message });
     if (!Array.isArray(reservation) || reservation.length === 0) {
-      return badRequest('No reserve data returned.');
+      return json(400, { error: 'No reserve data returned.' });
     }
 
     const row = reservation[0];
@@ -87,10 +125,10 @@ Deno.serve(async (req) => {
         p_request_id: requestId,
         p_error: finalizeError.message,
       });
-      return serverError('Failed to finalize withdrawal', finalizeError.message);
+      return json(500, { error: 'Failed to finalize withdrawal', details: finalizeError.message });
     }
 
-    return ok({
+    return json(200, {
       message: `Created ${requestedAmount} FP withdrawal token.`,
       token,
       mintUrl,
@@ -111,7 +149,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (String(error?.message || '').includes('Unauthorized')) return unauthorized();
-    return serverError('Unexpected wallet-withdraw error', error?.message || error);
+    if (String(error?.message || '').includes('Unauthorized')) return json(401, { error: 'Unauthorized' });
+    return json(500, { error: 'Unexpected wallet-withdraw error', details: error?.message || error });
   }
 });

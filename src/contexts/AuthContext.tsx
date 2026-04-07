@@ -37,30 +37,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    checkUser();
+    let mounted = true;
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Check for existing session
+    void checkUser();
+
+    // Listen for auth changes. Avoid awaiting Supabase calls directly in callback.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
       if (session?.user) {
-        await fetchOrCreateProfile(session.user);
+        setLoading(true);
+        void fetchOrCreateProfile(session.user).finally(() => {
+          if (mounted) setLoading(false);
+        });
       } else {
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const checkUser = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Session initialization timeout')), 10000),
+        ),
+      ]);
+
+      const { data: { session } } = sessionResult;
       if (session?.user) {
         await fetchOrCreateProfile(session.user);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking user:', error);
+      // Recover from stale/corrupt browser auth state instead of hanging on loader.
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (signOutError) {
+        console.error('Error clearing local auth session:', signOutError);
+      }
+      setUser(null);
     } finally {
       setLoading(false);
     }

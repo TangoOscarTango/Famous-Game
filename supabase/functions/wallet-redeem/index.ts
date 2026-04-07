@@ -73,15 +73,31 @@ const assertUnspentProofs = async (wallet: any, proofs: any[]) => {
   if (hasBadState) throw new Error('Mint rejected one or more proofs as spent or invalid.');
 };
 
+const resolveExport = (mod: any, name: string): any => {
+  const candidates = [
+    mod,
+    mod?.default,
+    mod?.default?.default,
+    mod?.module,
+    mod?.module?.default,
+  ];
+
+  for (const candidate of candidates) {
+    const value = candidate?.[name];
+    if (value) return value;
+  }
+
+  return undefined;
+};
+
 const loadCashu = async () => {
   const mod: any = await import('npm:@cashu/cashu-ts');
-  const merged = { ...(mod?.default ?? {}), ...mod };
-  const CashuMint = merged.CashuMint;
-  const CashuWallet = merged.CashuWallet;
-  const getDecodedToken = merged.getDecodedToken;
+  const CashuMint = resolveExport(mod, 'CashuMint');
+  const CashuWallet = resolveExport(mod, 'CashuWallet');
+  const getDecodedToken = resolveExport(mod, 'getDecodedToken');
 
   if (typeof CashuMint !== 'function' || typeof CashuWallet !== 'function' || typeof getDecodedToken !== 'function') {
-    throw new Error('cashu-ts exports unavailable in edge runtime');
+    throw new Error(`cashu-ts exports unavailable in edge runtime: ${Object.keys(mod || {}).join(',')}`);
   }
 
   return { CashuMint, CashuWallet, getDecodedToken };

@@ -347,12 +347,12 @@ begin
   end if;
 
   for proof_row in
-    select id, amount_sats, proof_json
-    from public.wallet_proofs
-    where user_id = p_user_id
-      and state = 'unspent'
-      and mint_url = v_mint_url
-    order by amount_sats desc, created_at asc
+    select wp.id, wp.amount_sats, wp.proof_json
+    from public.wallet_proofs wp
+    where wp.user_id = p_user_id
+      and wp.state = 'unspent'
+      and wp.mint_url = v_mint_url
+    order by wp.amount_sats desc, wp.created_at asc
   loop
     v_selected_ids := array_append(v_selected_ids, proof_row.id);
     v_total := v_total + proof_row.amount_sats;

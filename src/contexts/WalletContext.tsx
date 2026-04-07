@@ -93,6 +93,23 @@ const isMintAllowed = (mintUrl: string): boolean => {
   return trusted.includes(mintUrl);
 };
 
+const receiveWithFallback = async (wallet: CashuWallet, token: string): Promise<{ proofs: Proof[]; usedDleq: boolean }> => {
+  try {
+    const proofs = await wallet.receive(token, { requireDleq: true });
+    return { proofs, usedDleq: true };
+  } catch (strictError: any) {
+    const message = String(strictError?.message || '');
+    const isDleqIssue = message.toLowerCase().includes('dleq');
+
+    if (!isDleqIssue) {
+      throw strictError;
+    }
+
+    const proofs = await wallet.receive(token, { requireDleq: false });
+    return { proofs, usedDleq: false };
+  }
+};
+
 const assertUnspentProofs = async (wallet: CashuWallet, proofs: Proof[]) => {
   const states = await wallet.checkProofsStates(proofs);
   const hasBadState = states.some((state) => state.state !== 'UNSPENT');
@@ -292,8 +309,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const cashuWallet = new CashuWallet(mint, { unit: 'sat' });
       await cashuWallet.loadMint();
 
-      // This round-trips against the mint and reissues proofs to this wallet.
-      const receivedProofs = await cashuWallet.receive(normalizedToken, { requireDleq: true });
+      // Round-trip against mint and reissue proofs to this wallet.
+      // Fallback supports mints/wallets that do not include DLEQ in exports.
+      const { proofs: receivedProofs, usedDleq } = await receiveWithFallback(cashuWallet, normalizedToken);
       await assertUnspentProofs(cashuWallet, receivedProofs);
 
       const creditedSats = sumProofs(receivedProofs);
@@ -318,7 +336,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         direction: 'credit',
         amountSats: creditedSats,
         source: 'cashu_token',
-        note: note.trim() || `Redeem from ${decoded.mint}`,
+        note: note.trim() || `Redeem from ${decoded.mint}${usedDleq ? '' : ' (mint-state verified)'}`,
         status: 'confirmed',
         createdAt: new Date().toISOString(),
       };

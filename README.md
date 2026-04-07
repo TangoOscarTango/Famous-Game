@@ -1,9 +1,9 @@
 # Famous-Game
 
 Mobile-first React + Vite application with:
-- Magic-link email authentication (Supabase)
+- Supabase email + Google sign-in
 - In-game currency ledger (`Foxy Pesos`, `FP`) where `1 FP = 1 satoshi`
-- Cashu token redemption flow (supports `cashuA` and `cashuB`)
+- Server-authoritative Cashu custody (redeem + withdraw through Supabase Edge Functions)
 
 ## 1. Local Setup
 
@@ -15,103 +15,69 @@ npm ci
 ```env
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_CASHU_TRUSTED_MINTS=https://mint1.example,https://mint2.example
 ```
 3. Start the app:
 ```bash
-npm run dev
+npm run dev -- --host --force
 ```
 
-## 2. Supabase Auth Setup (Magic Links)
+## 2. Supabase Auth Setup
 
 In Supabase dashboard:
 
 1. Go to `Authentication -> URL Configuration`.
 2. Set `Site URL`:
 - Local: `http://localhost:5173`
-- Production: your deployed app URL
+- Production: your deployed URL
 3. Add redirect URLs:
 - `http://localhost:5173/auth/callback`
 - `https://your-production-domain/auth/callback`
-4. In `Authentication -> Providers -> Email`, enable:
-- `Email provider`
-- `Confirm email` (recommended)
-- `Magic link` sign-in
-5. In `Authentication -> Email Templates`, configure template content for your chosen mode:
-- Magic link mode: include `{{ .ConfirmationURL }}`
-- Email code mode: include `{{ .Token }}`
+4. In `Authentication -> Providers`, enable Email and Google as desired.
 
-Note: Supabase email OTP and magic link share the same `signInWithOtp` endpoint. The email template decides whether users receive a clickable link or a one-time code.
+For email-code mode template:
+- Use `{{ .Token }}`
 
-## 3. Required Tables
+For link mode template:
+- Use `{{ .ConfirmationURL }}`
 
-Run this SQL in Supabase SQL editor.
+## 3. Authoritative Wallet SQL
 
-```sql
-create table if not exists public.user_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,
-  display_name text not null,
-  avatar_url text,
-  games_played integer not null default 0,
-  messages_sent integer not null default 0,
-  times_generated integer not null default 0,
-  created_at timestamptz not null default now()
-);
+Apply the SQL file:
+- [wallet_authoritative.sql](/C:/codex/Famous-Game/supabase/sql/wallet_authoritative.sql)
 
-create table if not exists public.wallet_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  wallet_alias text,
-  balance_sats bigint not null default 0,
-  updated_at timestamptz not null default now()
-);
+This creates:
+- `wallet_proofs` (server-side proof custody)
+- `wallet_requests` (idempotency + request tracking)
+- `wallet_profiles`, `wallet_ledger` hardening
+- transactional RPC functions used by edge functions
 
-create table if not exists public.wallet_ledger (
-  id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  direction text not null check (direction in ('credit', 'debit')),
-  amount_sats bigint not null check (amount_sats > 0),
-  source text not null,
-  note text,
-  status text not null default 'pending_verification',
-  created_at timestamptz not null default now()
-);
+## 4. Deploy Edge Functions
+
+From repo root:
+
+```bash
+supabase functions deploy wallet-balance
+supabase functions deploy wallet-alias
+supabase functions deploy wallet-redeem
+supabase functions deploy wallet-withdraw
 ```
 
-## 4. RLS Policies (Baseline)
+Set edge-function secret allowlist (optional but recommended):
 
-```sql
-alter table public.user_profiles enable row level security;
-alter table public.wallet_profiles enable row level security;
-alter table public.wallet_ledger enable row level security;
-
-create policy "user_profiles_owner_all"
-on public.user_profiles
-for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-create policy "wallet_profiles_owner_all"
-on public.wallet_profiles
-for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-create policy "wallet_ledger_owner_all"
-on public.wallet_ledger
-for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+```bash
+supabase secrets set CASHU_TRUSTED_MINTS="https://nofee.testnut.cashu.space/"
 ```
 
-## 5. Cashu + FP Notes
+If `CASHU_TRUSTED_MINTS` is empty, all mints are accepted.
 
-- The app accepts `cashuA...` and `cashuB...` tokens.
-- Redeem is mint-confirmed using `wallet.receive(...)` with DLEQ checks before crediting FP.
-- Withdraw is mint-confirmed using `wallet.send(...)` and returns a QR/token payload.
-- FP balance is derived from real stored Cashu proofs (`1 FP = 1 sat`).
-- Set `VITE_CASHU_TRUSTED_MINTS` to a comma-separated allowlist to reject unknown mints.
-- Any Cashu wallet can be used as long as it exports standard `cashuA` or `cashuB` tokens.
+## 5. Security Model
+
+- Client does not hold authoritative proofs.
+- Redeem and withdraw happen server-side only.
+- Redeem credits only after mint acceptance.
+- Withdraw reserves proofs transactionally, performs mint send, then finalizes ledger.
+- Request IDs provide idempotency and replay protection.
+- Balance is derived from unspent server-side proofs, not user-editable client values.
 
 ## 6. Build
 

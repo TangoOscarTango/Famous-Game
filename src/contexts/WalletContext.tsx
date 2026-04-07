@@ -52,6 +52,16 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 const normalizeCashuToken = (token: string): string => token.trim().replace(/^cashu:/i, '');
 
+const invokeWithSession = async (fn: string, body: Record<string, unknown>) => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  return supabase.functions.invoke(fn, {
+    body,
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+};
+
 const extractFunctionErrorMessage = async (error: any, fallback: string): Promise<string> => {
   const baseMessage = error?.message || fallback;
   const context = error?.context;
@@ -113,9 +123,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('wallet-balance', {
-        body: { ledgerLimit: 100 },
-      });
+      const { data, error } = await invokeWithSession('wallet-balance', { ledgerLimit: 100 });
 
       if (error) throw error;
       applyServerState(data?.state ?? { walletAlias: null, balanceSats: 0, ledger: [] });
@@ -137,9 +145,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke('wallet-alias', {
-        body: { alias: trimmedAlias },
-      });
+      const { data, error } = await invokeWithSession('wallet-alias', { alias: trimmedAlias });
       if (error) throw error;
 
       applyServerState(data?.state ?? { walletAlias: trimmedAlias, balanceSats, ledger });
@@ -152,9 +158,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const disconnectWallet = useCallback(async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('wallet-alias', {
-        body: { alias: null },
-      });
+      const { data, error } = await invokeWithSession('wallet-alias', { alias: null });
       if (error) throw error;
       applyServerState(data?.state ?? { walletAlias: null, balanceSats, ledger });
     } catch (error) {
@@ -169,12 +173,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     try {
       const requestId = crypto.randomUUID();
-      const { data, error } = await supabase.functions.invoke('wallet-redeem', {
-        body: {
-          requestId,
-          token: normalizeCashuToken(token),
-          note,
-        },
+      const { data, error } = await invokeWithSession('wallet-redeem', {
+        requestId,
+        token: normalizeCashuToken(token),
+        note,
       });
 
       if (error) throw error;
@@ -199,12 +201,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     try {
       const requestId = crypto.randomUUID();
-      const { data, error } = await supabase.functions.invoke('wallet-withdraw', {
-        body: {
-          requestId,
-          amountSats,
-          note,
-        },
+      const { data, error } = await invokeWithSession('wallet-withdraw', {
+        requestId,
+        amountSats,
+        note,
       });
 
       if (error) throw error;

@@ -79,8 +79,6 @@ const Chat: React.FC = () => {
       const { error } = await supabase
         .from('chat_messages')
         .insert({
-          user_id: user.id,
-          display_name: user.displayName,
           message: newMessage.trim(),
         });
 
@@ -146,7 +144,7 @@ const Chat: React.FC = () => {
                     ? 'bg-gradient-to-br from-cyan-500 to-blue-600' 
                     : 'bg-gradient-to-br from-purple-500 to-pink-600'
                 }`}>
-                  {msg.display_name.charAt(0).toUpperCase()}
+                  {(msg.display_name || 'A').charAt(0).toUpperCase()}
                 </div>
 
                 {/* Message Bubble */}
@@ -156,7 +154,7 @@ const Chat: React.FC = () => {
                     : 'bg-gray-700/70 rounded-bl-md'
                 }`}>
                   {!isOwnMessage(msg) && (
-                    <p className="text-xs text-purple-400 font-medium mb-1">{msg.display_name}</p>
+                    <p className="text-xs text-purple-400 font-medium mb-1">{msg.display_name || 'Anonymous'}</p>
                   )}
                   <p className="text-white text-sm break-words">{msg.message}</p>
                   <p className={`text-xs mt-1 ${isOwnMessage(msg) ? 'text-cyan-200/70' : 'text-gray-500'}`}>

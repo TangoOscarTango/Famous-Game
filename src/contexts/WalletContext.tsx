@@ -52,6 +52,33 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 const normalizeCashuToken = (token: string): string => token.trim().replace(/^cashu:/i, '');
 
+const extractFunctionErrorMessage = async (error: any, fallback: string): Promise<string> => {
+  const baseMessage = error?.message || fallback;
+  const context = error?.context;
+
+  if (!context || typeof context.text !== 'function') {
+    return baseMessage;
+  }
+
+  try {
+    const raw = await context.text();
+    if (!raw) return baseMessage;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.error) {
+        const details = parsed?.details ? ` (${parsed.details})` : '';
+        return `${parsed.error}${details}`;
+      }
+      return raw;
+    } catch {
+      return raw;
+    }
+  } catch {
+    return baseMessage;
+  }
+};
+
 export const useWallet = () => {
   const context = useContext(WalletContext);
   if (!context) {
@@ -118,7 +145,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       applyServerState(data?.state ?? { walletAlias: trimmedAlias, balanceSats, ledger });
       return { success: true, message: `${trimmedAlias} connected.` };
     } catch (error: any) {
-      return { success: false, message: error?.message || 'Failed to update wallet label.' };
+      const message = await extractFunctionErrorMessage(error, 'Failed to update wallet label.');
+      return { success: false, message };
     }
   }, [applyServerState, balanceSats, ledger]);
 
@@ -153,7 +181,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       applyServerState(data?.state ?? { walletAlias, balanceSats, ledger });
       return { success: true, message: data?.message ?? 'Redeem successful.' };
     } catch (error: any) {
-      return { success: false, message: error?.message || 'Unable to redeem token.' };
+      const message = await extractFunctionErrorMessage(error, 'Unable to redeem token.');
+      return { success: false, message };
     }
   }, [applyServerState, balanceSats, ledger, user, walletAlias]);
 
@@ -196,7 +225,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       applyServerState(data?.state ?? { walletAlias, balanceSats, ledger });
       return { success: true, message: data?.message ?? 'Withdrawal token created.', artifact };
     } catch (error: any) {
-      return { success: false, message: error?.message || 'Unable to create withdrawal token.' };
+      const message = await extractFunctionErrorMessage(error, 'Unable to create withdrawal token.');
+      return { success: false, message };
     }
   }, [applyServerState, balanceSats, ledger, user, walletAlias]);
 

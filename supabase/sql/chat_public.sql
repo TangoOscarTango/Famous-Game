@@ -4,7 +4,7 @@ create table if not exists public.chat_messages (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   display_name text not null default 'Anonymous',
-  message text not null check (char_length(trim(message)) between 1 and 500),
+  message text not null check (char_length(trim(message)) between 1 and 280),
   created_at timestamptz not null default now()
 );
 
@@ -22,12 +22,6 @@ for select
 to authenticated
 using (true);
 
-create policy "chat_messages_insert_authenticated"
-on public.chat_messages
-for insert
-to authenticated
-with check (auth.uid() = user_id);
-
 create or replace function public.chat_messages_before_insert()
 returns trigger
 language plpgsql
@@ -37,12 +31,12 @@ as $$
 declare
   v_display_name text;
 begin
-  if auth.uid() is null then
+  if auth.uid() is not null then
+    new.user_id := auth.uid();
+  elsif new.user_id is null then
     raise exception 'Authentication required';
   end if;
-
-  new.user_id := auth.uid();
-  new.message := left(trim(new.message), 500);
+  new.message := left(trim(new.message), 280);
 
   if new.message = '' then
     raise exception 'Message cannot be empty';
@@ -51,7 +45,7 @@ begin
   select nullif(trim(up.display_name), '')
     into v_display_name
   from public.user_profiles up
-  where up.user_id = auth.uid();
+  where up.user_id = new.user_id;
 
   new.display_name := coalesce(v_display_name, 'Anonymous');
   return new;
@@ -64,7 +58,7 @@ before insert on public.chat_messages
 for each row
 execute function public.chat_messages_before_insert();
 
-grant select, insert on public.chat_messages to authenticated;
+grant select on public.chat_messages to authenticated;
 
 do $$
 begin

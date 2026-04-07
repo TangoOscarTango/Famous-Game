@@ -40,6 +40,7 @@ interface WalletContextType {
     note: string,
   ) => Promise<{ success: boolean; message: string; artifact?: WithdrawalArtifact }>;
   clearLastWithdrawal: () => void;
+  refreshWalletState: () => Promise<void>;
 }
 
 interface WalletStateResponse {
@@ -247,6 +248,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     redeemCashuToken,
     spendFp,
     clearLastWithdrawal,
+    refreshWalletState: fetchWalletState,
   }), [
     balanceSats,
     clearLastWithdrawal,
@@ -258,6 +260,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     redeemCashuToken,
     spendFp,
     walletAlias,
+    fetchWalletState,
   ]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

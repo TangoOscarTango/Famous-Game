@@ -525,9 +525,125 @@ begin
 end;
 $$;
 
+create or replace function public.wallet_finalize_fee(
+  p_user_id uuid,
+  p_request_id uuid,
+  p_mint_url text,
+  p_amount_sats bigint,
+  p_keep_proofs jsonb,
+  p_note text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  proof_item jsonb;
+  v_amount bigint;
+  v_balance bigint;
+begin
+  perform pg_advisory_xact_lock(hashtext(p_user_id::text));
+
+  if p_amount_sats <= 0 then
+    raise exception 'Fee amount must be greater than zero.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.wallet_requests wr
+    where wr.id = p_request_id
+      and wr.user_id = p_user_id
+      and wr.kind = 'withdraw'
+      and wr.status = 'pending'
+  ) then
+    raise exception 'Fee request is not pending.';
+  end if;
+
+  update public.wallet_proofs
+    set state = 'spent',
+        updated_at = now()
+  where user_id = p_user_id
+    and request_id = p_request_id
+    and state = 'reserved';
+
+  for proof_item in
+    select value
+    from jsonb_array_elements(coalesce(p_keep_proofs, '[]'::jsonb))
+  loop
+    v_amount := coalesce((proof_item ->> 'amount')::bigint, 0);
+    if v_amount <= 0 then
+      continue;
+    end if;
+
+    insert into public.wallet_proofs (
+      user_id,
+      mint_url,
+      proof_secret,
+      amount_sats,
+      proof_json,
+      state,
+      request_id,
+      created_at,
+      updated_at
+    )
+    values (
+      p_user_id,
+      p_mint_url,
+      coalesce(proof_item ->> 'secret', ''),
+      v_amount,
+      proof_item - 'mint',
+      'unspent',
+      p_request_id,
+      now(),
+      now()
+    )
+    on conflict (mint_url, proof_secret) do nothing;
+  end loop;
+
+  insert into public.wallet_ledger (
+    id, user_id, direction, amount_sats, source, note, status, request_id, created_at
+  )
+  values (
+    gen_random_uuid(),
+    p_user_id,
+    'debit',
+    p_amount_sats,
+    'chat_cooldown_fee',
+    coalesce(nullif(trim(p_note), ''), 'Cooldown bypass fee'),
+    'confirmed',
+    p_request_id,
+    now()
+  )
+  on conflict (request_id) do nothing;
+
+  select coalesce(sum(amount_sats), 0)
+    into v_balance
+  from public.wallet_proofs
+  where user_id = p_user_id
+    and state = 'unspent';
+
+  insert into public.wallet_profiles (user_id, balance_sats, updated_at)
+  values (p_user_id, v_balance, now())
+  on conflict (user_id)
+  do update
+    set balance_sats = excluded.balance_sats,
+        updated_at = now();
+
+  update public.wallet_requests
+    set status = 'completed',
+        updated_at = now()
+  where id = p_request_id
+    and user_id = p_user_id;
+
+  return public.wallet_get_state(p_user_id, 100);
+end;
+$$;
+
 grant execute on function public.wallet_get_state(uuid, integer) to authenticated;
 grant execute on function public.wallet_set_alias(uuid, text) to authenticated;
 grant execute on function public.wallet_record_redeem(uuid, uuid, text, jsonb, text) to authenticated;
 grant execute on function public.wallet_reserve_withdraw(uuid, uuid, bigint) to authenticated;
 grant execute on function public.wallet_release_withdraw(uuid, uuid, text) to authenticated;
 grant execute on function public.wallet_finalize_withdraw(uuid, uuid, text, bigint, jsonb, text) to authenticated;
+grant execute on function public.wallet_finalize_fee(uuid, uuid, text, bigint, jsonb, text) to authenticated;

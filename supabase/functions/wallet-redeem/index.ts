@@ -92,8 +92,8 @@ const resolveExport = (mod: any, name: string): any => {
 
 const loadCashu = async () => {
   const mod: any = await import('npm:@cashu/cashu-ts');
-  const CashuMint = resolveExport(mod, 'CashuMint');
-  const CashuWallet = resolveExport(mod, 'CashuWallet');
+  const CashuMint = resolveExport(mod, 'CashuMint') ?? resolveExport(mod, 'Mint');
+  const CashuWallet = resolveExport(mod, 'CashuWallet') ?? resolveExport(mod, 'Wallet');
   const getDecodedToken = resolveExport(mod, 'getDecodedToken');
 
   if (typeof CashuMint !== 'function' || typeof CashuWallet !== 'function' || typeof getDecodedToken !== 'function') {

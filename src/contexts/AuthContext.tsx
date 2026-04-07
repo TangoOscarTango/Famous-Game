@@ -160,13 +160,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         email,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
       if (error) throw error;
       return {
         success: true,
-        message: 'Verification code sent. If you received a link instead, update Supabase email template to use {{ .Token }}.',
+        message: 'Sign-in email sent. Use the link or enter the code from your email.',
       };
     } catch (error: any) {
       console.error('Error sending email code:', error);

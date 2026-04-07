@@ -164,7 +164,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (error) throw error;
-      return { success: true, message: 'Verification code sent to your email.' };
+      return {
+        success: true,
+        message: 'Verification code sent. If you received a link instead, update Supabase email template to use {{ .Token }}.',
+      };
     } catch (error: any) {
       console.error('Error sending email code:', error);
       return { success: false, message: error.message || 'Failed to send verification code' };

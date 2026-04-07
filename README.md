@@ -36,6 +36,11 @@ In Supabase dashboard:
 - `Email provider`
 - `Confirm email` (recommended)
 - `Magic link` sign-in
+5. In `Authentication -> Email Templates`, configure template content for your chosen mode:
+- Magic link mode: include `{{ .ConfirmationURL }}`
+- Email code mode: include `{{ .Token }}`
+
+Note: Supabase email OTP and magic link share the same `signInWithOtp` endpoint. The email template decides whether users receive a clickable link or a one-time code.
 
 ## 3. Required Tables
 

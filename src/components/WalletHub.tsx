@@ -151,7 +151,8 @@ const WalletHub: React.FC = () => {
       </div>
 
       <div className="rounded-xl bg-gray-800/50 border border-gray-700/50 p-5">
-        <h3 className="text-white font-semibold mb-4">Spend FP</h3>
+        <h3 className="text-white font-semibold mb-1">Withdraw FP</h3>
+        <p className="text-xs text-gray-400 mb-4">Cashu QR/token withdrawal is coming next. This button will not deduct funds yet.</p>
         <form onSubmit={handleSpend} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input
             value={spendAmount}
@@ -171,7 +172,7 @@ const WalletHub: React.FC = () => {
             disabled={loading}
             className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-sm transition-colors disabled:opacity-50"
           >
-            Spend
+            Withdraw (Soon)
           </button>
         </form>
       </div>

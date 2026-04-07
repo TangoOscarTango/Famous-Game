@@ -329,24 +329,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return { success: false, message: 'Enter a valid FP amount.' };
     }
 
-    const amountSats = Math.floor(amountFp);
-    if (amountSats > balanceSats) {
-      return { success: false, message: 'Insufficient FP balance.' };
-    }
-
-    const entry: WalletLedgerEntry = {
-      id: crypto.randomUUID(),
-      direction: 'debit',
-      amountSats,
-      source: 'game_action',
-      note: note.trim() || 'In-game spend',
-      status: 'confirmed',
-      createdAt: new Date().toISOString(),
+    return {
+      success: false,
+      message: 'Cashu withdrawal QR is not implemented yet. No FP was deducted.',
     };
-
-    await appendLedgerEntry(entry, balanceSats - amountSats);
-    return { success: true, message: `${amountSats} FP spent.` };
-  }, [appendLedgerEntry, balanceSats, user]);
+  }, [user]);
 
   const value = useMemo<WalletContextType>(() => ({
     loading,

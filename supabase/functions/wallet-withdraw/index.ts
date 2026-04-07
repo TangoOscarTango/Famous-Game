@@ -47,6 +47,20 @@ const assertUnspentProofs = async (wallet: any, proofs: any[]) => {
   if (hasBadState) throw new Error('Mint rejected generated proofs as invalid.');
 };
 
+const loadCashu = async () => {
+  const mod: any = await import('npm:@cashu/cashu-ts');
+  const merged = { ...(mod?.default ?? {}), ...mod };
+  const CashuMint = merged.CashuMint;
+  const CashuWallet = merged.CashuWallet;
+  const getEncodedTokenV4 = merged.getEncodedTokenV4;
+
+  if (typeof CashuMint !== 'function' || typeof CashuWallet !== 'function' || typeof getEncodedTokenV4 !== 'function') {
+    throw new Error('cashu-ts exports unavailable in edge runtime');
+  }
+
+  return { CashuMint, CashuWallet, getEncodedTokenV4 };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json(400, { error: 'Method not allowed' });
@@ -84,7 +98,7 @@ Deno.serve(async (req) => {
     const reservedProofs = (row.proofs as any[]) ?? [];
     const requestedAmount = Math.floor(amountSats);
 
-    const { CashuMint, CashuWallet, getEncodedTokenV4 } = await import('npm:@cashu/cashu-ts');
+    const { CashuMint, CashuWallet, getEncodedTokenV4 } = await loadCashu();
     const mint = new CashuMint(mintUrl);
     const wallet = new CashuWallet(mint, { unit: 'sat' });
     await wallet.loadMint();

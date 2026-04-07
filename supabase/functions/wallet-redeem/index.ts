@@ -73,6 +73,20 @@ const assertUnspentProofs = async (wallet: any, proofs: any[]) => {
   if (hasBadState) throw new Error('Mint rejected one or more proofs as spent or invalid.');
 };
 
+const loadCashu = async () => {
+  const mod: any = await import('npm:@cashu/cashu-ts');
+  const merged = { ...(mod?.default ?? {}), ...mod };
+  const CashuMint = merged.CashuMint;
+  const CashuWallet = merged.CashuWallet;
+  const getDecodedToken = merged.getDecodedToken;
+
+  if (typeof CashuMint !== 'function' || typeof CashuWallet !== 'function' || typeof getDecodedToken !== 'function') {
+    throw new Error('cashu-ts exports unavailable in edge runtime');
+  }
+
+  return { CashuMint, CashuWallet, getDecodedToken };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json(400, { error: 'Method not allowed' });
@@ -87,7 +101,7 @@ Deno.serve(async (req) => {
     if (!rawToken.trim()) return json(400, { error: 'Token is required' });
 
     const token = normalizeCashuToken(rawToken);
-    const { CashuMint, CashuWallet, getDecodedToken } = await import('npm:@cashu/cashu-ts');
+    const { CashuMint, CashuWallet, getDecodedToken } = await loadCashu();
     const decoded = getDecodedToken(token);
     if (!decoded?.mint) return json(400, { error: 'Token does not contain a mint URL' });
     if (!isMintAllowed(decoded.mint)) return json(400, { error: 'Mint is not in trusted allowlist' });

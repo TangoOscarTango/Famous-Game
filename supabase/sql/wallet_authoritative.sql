@@ -523,9 +523,35 @@ begin
 end;
 $$;
 
+-- Compatibility overload for environments that still resolve the old
+-- argument ordering in PostgREST schema cache.
+create or replace function public.wallet_finalize_withdraw(
+  p_amount_sats bigint,
+  p_keep_proofs jsonb,
+  p_mint_url text,
+  p_note text,
+  p_request_id uuid,
+  p_user_id uuid
+)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select public.wallet_finalize_withdraw(
+    p_user_id,
+    p_request_id,
+    p_mint_url,
+    p_amount_sats,
+    p_keep_proofs,
+    p_note
+  );
+$$;
+
 grant execute on function public.wallet_get_state(uuid, integer) to authenticated;
 grant execute on function public.wallet_set_alias(uuid, text) to authenticated;
 grant execute on function public.wallet_record_redeem(uuid, uuid, text, jsonb, text) to authenticated;
 grant execute on function public.wallet_reserve_withdraw(uuid, uuid, bigint) to authenticated;
 grant execute on function public.wallet_release_withdraw(uuid, uuid, text) to authenticated;
 grant execute on function public.wallet_finalize_withdraw(uuid, uuid, text, bigint, jsonb, text) to authenticated;
+grant execute on function public.wallet_finalize_withdraw(bigint, jsonb, text, text, uuid, uuid) to authenticated;

@@ -20,8 +20,7 @@ create table if not exists public.wallet_ledger (
 );
 
 create unique index if not exists wallet_ledger_request_idx
-  on public.wallet_ledger(request_id)
-  where request_id is not null;
+  on public.wallet_ledger(request_id);
 
 create table if not exists public.wallet_proofs (
   id uuid primary key default gen_random_uuid(),

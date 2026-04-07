@@ -55,7 +55,9 @@ alter table public.wallet_proofs enable row level security;
 alter table public.wallet_requests enable row level security;
 
 drop policy if exists "wallet_profiles_owner_all" on public.wallet_profiles;
+drop policy if exists "wallet_profiles_owner_read" on public.wallet_profiles;
 drop policy if exists "wallet_ledger_owner_all" on public.wallet_ledger;
+drop policy if exists "wallet_ledger_owner_read" on public.wallet_ledger;
 drop policy if exists "wallet_proofs_no_client_access" on public.wallet_proofs;
 drop policy if exists "wallet_requests_no_client_access" on public.wallet_requests;
 

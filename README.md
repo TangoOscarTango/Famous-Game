@@ -15,6 +15,7 @@ npm ci
 ```env
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_CASHU_TRUSTED_MINTS=https://mint1.example,https://mint2.example
 ```
 3. Start the app:
 ```bash
@@ -105,9 +106,12 @@ with check (auth.uid() = user_id);
 
 ## 5. Cashu + FP Notes
 
-- The app parses `cashuA...` and `cashuB...` tokens client-side to read proof amounts and credits FP at `1 FP = 1 sat`.
-- Redeemed tokens are currently marked `pending_verification` until server-side mint validation is added.
-- Any Cashu wallet can be used as long as it exports standard `cashuA` tokens.
+- The app accepts `cashuA...` and `cashuB...` tokens.
+- Redeem is mint-confirmed using `wallet.receive(...)` with DLEQ checks before crediting FP.
+- Withdraw is mint-confirmed using `wallet.send(...)` and returns a QR/token payload.
+- FP balance is derived from real stored Cashu proofs (`1 FP = 1 sat`).
+- Set `VITE_CASHU_TRUSTED_MINTS` to a comma-separated allowlist to reject unknown mints.
+- Any Cashu wallet can be used as long as it exports standard `cashuA` or `cashuB` tokens.
 
 ## 6. Build
 

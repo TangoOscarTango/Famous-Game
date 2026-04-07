@@ -14,6 +14,8 @@ const WalletHub: React.FC = () => {
     disconnectWallet,
     redeemCashuToken,
     spendFp,
+    lastWithdrawal,
+    clearLastWithdrawal,
   } = useWallet();
 
   const [aliasInput, setAliasInput] = useState('');
@@ -152,7 +154,7 @@ const WalletHub: React.FC = () => {
 
       <div className="rounded-xl bg-gray-800/50 border border-gray-700/50 p-5">
         <h3 className="text-white font-semibold mb-1">Withdraw FP</h3>
-        <p className="text-xs text-gray-400 mb-4">Cashu QR/token withdrawal is coming next. This button will not deduct funds yet.</p>
+        <p className="text-xs text-gray-400 mb-4">Creates a mint-confirmed Cashu token and QR you can import in your wallet.</p>
         <form onSubmit={handleSpend} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input
             value={spendAmount}
@@ -172,15 +174,54 @@ const WalletHub: React.FC = () => {
             disabled={loading}
             className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-sm transition-colors disabled:opacity-50"
           >
-            Withdraw (Soon)
+            Create Withdraw Token
           </button>
         </form>
       </div>
 
+      {lastWithdrawal && (
+        <div className="rounded-xl bg-gray-800/50 border border-gray-700/50 p-5">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h3 className="text-white font-semibold">Latest Withdrawal</h3>
+              <p className="text-xs text-gray-400 mt-1">
+                {lastWithdrawal.amountSats.toLocaleString()} FP from {lastWithdrawal.mintUrl}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearLastWithdrawal}
+              className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-xs transition-colors"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[220px,1fr] gap-4">
+            <div className="bg-white rounded-lg p-3 w-[220px] h-[220px] mx-auto lg:mx-0">
+              <img
+                src={lastWithdrawal.qrCodeDataUrl}
+                alt="Cashu withdrawal QR"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400">Token (for copy/import)</p>
+              <textarea
+                readOnly
+                value={lastWithdrawal.token}
+                rows={7}
+                className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-gray-100 text-xs"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl bg-gray-800/50 border border-gray-700/50 overflow-hidden">
         <div className="p-4 border-b border-gray-700/50">
           <h3 className="text-white font-semibold">Wallet Ledger</h3>
-          <p className="text-xs text-gray-400 mt-1">Cashu redeems are marked pending until mint verification is added server-side.</p>
+          <p className="text-xs text-gray-400 mt-1">Redeem and withdraw are mint-confirmed before ledger updates.</p>
         </div>
         <div className="divide-y divide-gray-700/50">
           {ledger.length === 0 && (

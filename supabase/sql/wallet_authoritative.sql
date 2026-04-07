@@ -49,10 +49,27 @@ create table if not exists public.wallet_requests (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.wallet_bank_proofs (
+  id uuid primary key default gen_random_uuid(),
+  mint_url text not null,
+  proof_secret text not null,
+  amount_sats bigint not null check (amount_sats > 0),
+  proof_json jsonb not null,
+  source_user_id uuid references auth.users(id) on delete set null,
+  request_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (mint_url, proof_secret)
+);
+
+create index if not exists wallet_bank_proofs_request_idx
+  on public.wallet_bank_proofs(request_id);
+
 alter table public.wallet_profiles enable row level security;
 alter table public.wallet_ledger enable row level security;
 alter table public.wallet_proofs enable row level security;
 alter table public.wallet_requests enable row level security;
+alter table public.wallet_bank_proofs enable row level security;
 
 drop policy if exists "wallet_profiles_owner_all" on public.wallet_profiles;
 drop policy if exists "wallet_profiles_owner_read" on public.wallet_profiles;
@@ -60,6 +77,7 @@ drop policy if exists "wallet_ledger_owner_all" on public.wallet_ledger;
 drop policy if exists "wallet_ledger_owner_read" on public.wallet_ledger;
 drop policy if exists "wallet_proofs_no_client_access" on public.wallet_proofs;
 drop policy if exists "wallet_requests_no_client_access" on public.wallet_requests;
+drop policy if exists "wallet_bank_proofs_no_client_access" on public.wallet_bank_proofs;
 
 create policy "wallet_profiles_owner_read"
 on public.wallet_profiles
@@ -79,6 +97,12 @@ with check (false);
 
 create policy "wallet_requests_no_client_access"
 on public.wallet_requests
+for all
+using (false)
+with check (false);
+
+create policy "wallet_bank_proofs_no_client_access"
+on public.wallet_bank_proofs
 for all
 using (false)
 with check (false);
@@ -531,6 +555,7 @@ create or replace function public.wallet_finalize_fee(
   p_mint_url text,
   p_amount_sats bigint,
   p_keep_proofs jsonb,
+  p_bank_proofs jsonb default '[]'::jsonb,
   p_note text default null
 )
 returns jsonb
@@ -601,6 +626,38 @@ begin
     on conflict (mint_url, proof_secret) do nothing;
   end loop;
 
+  for proof_item in
+    select value
+    from jsonb_array_elements(coalesce(p_bank_proofs, '[]'::jsonb))
+  loop
+    v_amount := coalesce((proof_item ->> 'amount')::bigint, 0);
+    if v_amount <= 0 then
+      continue;
+    end if;
+
+    insert into public.wallet_bank_proofs (
+      mint_url,
+      proof_secret,
+      amount_sats,
+      proof_json,
+      source_user_id,
+      request_id,
+      created_at,
+      updated_at
+    )
+    values (
+      p_mint_url,
+      coalesce(proof_item ->> 'secret', ''),
+      v_amount,
+      proof_item - 'mint',
+      p_user_id,
+      p_request_id,
+      now(),
+      now()
+    )
+    on conflict (mint_url, proof_secret) do nothing;
+  end loop;
+
   insert into public.wallet_ledger (
     id, user_id, direction, amount_sats, source, note, status, request_id, created_at
   )
@@ -646,4 +703,4 @@ grant execute on function public.wallet_record_redeem(uuid, uuid, text, jsonb, t
 grant execute on function public.wallet_reserve_withdraw(uuid, uuid, bigint) to authenticated;
 grant execute on function public.wallet_release_withdraw(uuid, uuid, text) to authenticated;
 grant execute on function public.wallet_finalize_withdraw(uuid, uuid, text, bigint, jsonb, text) to authenticated;
-grant execute on function public.wallet_finalize_fee(uuid, uuid, text, bigint, jsonb, text) to authenticated;
+grant execute on function public.wallet_finalize_fee(uuid, uuid, text, bigint, jsonb, jsonb, text) to authenticated;

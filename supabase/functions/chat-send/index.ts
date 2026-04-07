@@ -166,6 +166,14 @@ Deno.serve(async (req) => {
         dleq: proof.dleq ?? null,
         witness: proof.witness ?? null,
       }));
+      const bankPayload = send.map((proof) => ({
+        id: proof.id,
+        amount: proof.amount,
+        secret: proof.secret,
+        C: proof.C,
+        dleq: proof.dleq ?? null,
+        witness: proof.witness ?? null,
+      }));
 
       const { data: feeState, error: finalizeError } = await service.rpc('wallet_finalize_fee', {
         p_user_id: user.id,
@@ -173,6 +181,7 @@ Deno.serve(async (req) => {
         p_mint_url: mintUrl,
         p_amount_sats: COOLDOWN_BYPASS_COST_SATS,
         p_keep_proofs: keepPayload,
+        p_bank_proofs: bankPayload,
         p_note: 'Cooldown bypass fee',
       });
 

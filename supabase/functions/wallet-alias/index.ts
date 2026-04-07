@@ -12,15 +12,6 @@ const getEnv = (name: string): string => {
   return value;
 };
 
-const createAuthClient = (authHeader: string | null) => {
-  const supabaseUrl = getEnv('SUPABASE_URL');
-  const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: authHeader ?? '' } },
-  });
-};
-
 const createServiceClient = () => {
   const supabaseUrl = getEnv('SUPABASE_URL');
   const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
@@ -31,8 +22,11 @@ const createServiceClient = () => {
 
 const authenticateRequest = async (req: Request) => {
   const authHeader = req.headers.get('Authorization');
-  const authClient = createAuthClient(authHeader);
-  const { data, error } = await authClient.auth.getUser();
+  const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new Error('Unauthorized');
+
+  const service = createServiceClient();
+  const { data, error } = await service.auth.getUser(token);
   if (error || !data?.user) throw new Error('Unauthorized');
   return data.user;
 };

@@ -1,4 +1,3 @@
-import { CashuMint, CashuWallet, getDecodedToken, type Proof } from 'npm:@cashu/cashu-ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -62,7 +61,7 @@ const isMintAllowed = (mintUrl: string): boolean => {
 
 const normalizeCashuToken = (token: string): string => token.trim().replace(/^cashu:/i, '');
 
-const receiveWithFallback = async (wallet: CashuWallet, token: string): Promise<{ proofs: Proof[]; usedDleq: boolean }> => {
+const receiveWithFallback = async (wallet: any, token: string): Promise<{ proofs: any[]; usedDleq: boolean }> => {
   try {
     const proofs = await wallet.receive(token, { requireDleq: true });
     return { proofs, usedDleq: true };
@@ -74,7 +73,7 @@ const receiveWithFallback = async (wallet: CashuWallet, token: string): Promise<
   }
 };
 
-const assertUnspentProofs = async (wallet: CashuWallet, proofs: Proof[]) => {
+const assertUnspentProofs = async (wallet: any, proofs: any[]) => {
   const states = await wallet.checkProofsStates(proofs);
   const hasBadState = states.some((state) => state.state !== 'UNSPENT');
   if (hasBadState) throw new Error('Mint rejected one or more proofs as spent or invalid.');
@@ -94,6 +93,7 @@ Deno.serve(async (req) => {
     if (!rawToken.trim()) return json(400, { error: 'Token is required' });
 
     const token = normalizeCashuToken(rawToken);
+    const { CashuMint, CashuWallet, getDecodedToken } = await import('npm:@cashu/cashu-ts');
     const decoded = getDecodedToken(token);
     if (!decoded?.mint) return json(400, { error: 'Token does not contain a mint URL' });
     if (!isMintAllowed(decoded.mint)) return json(400, { error: 'Mint is not in trusted allowlist' });

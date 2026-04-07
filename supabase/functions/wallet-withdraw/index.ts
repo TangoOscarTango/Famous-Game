@@ -1,4 +1,3 @@
-import { CashuMint, CashuWallet, getEncodedTokenV4, type Proof } from 'npm:@cashu/cashu-ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -48,7 +47,7 @@ const json = (status: number, body: unknown) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
-const assertUnspentProofs = async (wallet: CashuWallet, proofs: Proof[]) => {
+const assertUnspentProofs = async (wallet: any, proofs: any[]) => {
   const states = await wallet.checkProofsStates(proofs);
   const hasBadState = states.some((state) => state.state !== 'UNSPENT');
   if (hasBadState) throw new Error('Mint rejected generated proofs as invalid.');
@@ -88,9 +87,10 @@ Deno.serve(async (req) => {
 
     const row = reservation[0];
     const mintUrl = row.mint_url as string;
-    const reservedProofs = (row.proofs as Proof[]) ?? [];
+    const reservedProofs = (row.proofs as any[]) ?? [];
     const requestedAmount = Math.floor(amountSats);
 
+    const { CashuMint, CashuWallet, getEncodedTokenV4 } = await import('npm:@cashu/cashu-ts');
     const mint = new CashuMint(mintUrl);
     const wallet = new CashuWallet(mint, { unit: 'sat' });
     await wallet.loadMint();

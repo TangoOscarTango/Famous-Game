@@ -3,7 +3,7 @@
 Mobile-first React + Vite application with:
 - Magic-link email authentication (Supabase)
 - In-game currency ledger (`Foxy Pesos`, `FP`) where `1 FP = 1 satoshi`
-- Cashu token redemption flow (token format starting with `cashuA`)
+- Cashu token redemption flow (supports `cashuA` and `cashuB`)
 
 ## 1. Local Setup
 
@@ -105,7 +105,7 @@ with check (auth.uid() = user_id);
 
 ## 5. Cashu + FP Notes
 
-- The app parses `cashuA...` tokens client-side to read proof amounts and credits FP at `1 FP = 1 sat`.
+- The app parses `cashuA...` and `cashuB...` tokens client-side to read proof amounts and credits FP at `1 FP = 1 sat`.
 - Redeemed tokens are currently marked `pending_verification` until server-side mint validation is added.
 - Any Cashu wallet can be used as long as it exports standard `cashuA` tokens.
 

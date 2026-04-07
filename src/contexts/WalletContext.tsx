@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { decode as decodeCbor } from 'cbor-x';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -57,21 +58,23 @@ const safeParse = (value: string | null): StoredWalletState | null => {
   }
 };
 
-const parseCashuTokenAmount = (token: string): number => {
-  const trimmed = token.trim();
-  if (!trimmed) {
-    throw new Error('Token is required');
-  }
-
-  if (!trimmed.startsWith('cashuA')) {
-    throw new Error('Unsupported token format. Expected a token beginning with cashuA.');
-  }
-
-  const payload = trimmed.slice('cashuA'.length);
-  const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+const base64UrlToBytes = (base64Url: string): Uint8Array => {
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  const decoded = atob(padded);
-  const parsed = JSON.parse(decoded);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+};
+
+const parseCashuAAmount = (payload: string): number => {
+  const bytes = base64UrlToBytes(payload);
+  const decodedText = new TextDecoder().decode(bytes);
+  const parsed = JSON.parse(decodedText);
 
   const readProofAmounts = (proofs: any[]): number =>
     proofs.reduce((sum, proof) => sum + (typeof proof?.amount === 'number' ? proof.amount : 0), 0);
@@ -88,6 +91,43 @@ const parseCashuTokenAmount = (token: string): number => {
   }
 
   throw new Error('Unable to parse token proofs.');
+};
+
+const parseCashuBAmount = (payload: string): number => {
+  const parsed: any = decodeCbor(base64UrlToBytes(payload));
+  if (!Array.isArray(parsed?.t)) {
+    throw new Error('Unable to parse cashuB token payload.');
+  }
+
+  return parsed.t.reduce((sum: number, tokenGroup: any) => {
+    if (!Array.isArray(tokenGroup?.p)) return sum;
+
+    const groupSum = tokenGroup.p.reduce((groupTotal: number, proof: any) => {
+      const amount = proof?.a;
+      if (typeof amount === 'number') return groupTotal + amount;
+      if (typeof amount === 'bigint') return groupTotal + Number(amount);
+      return groupTotal;
+    }, 0);
+
+    return sum + groupSum;
+  }, 0);
+};
+
+const parseCashuTokenAmount = (token: string): number => {
+  const trimmed = token.trim().replace(/^cashu:/i, '');
+  if (!trimmed) {
+    throw new Error('Token is required');
+  }
+
+  if (trimmed.startsWith('cashuA')) {
+    return parseCashuAAmount(trimmed.slice('cashuA'.length));
+  }
+
+  if (trimmed.startsWith('cashuB')) {
+    return parseCashuBAmount(trimmed.slice('cashuB'.length));
+  }
+
+  throw new Error('Unsupported token format. Expected token beginning with cashuA or cashuB.');
 };
 
 export const useWallet = () => {

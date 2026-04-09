@@ -33,12 +33,22 @@ interface ResourceStats {
   maxHappy: number;
   life: number;
   maxLife: number;
+  nextMoraleResetAt?: string | null;
 }
 
 interface InventoryState {
   scrap: number;
   components: number;
   rareTech: number;
+}
+
+interface InventoryItem {
+  name: string;
+  category: string;
+  quantity: number;
+  moraleBoost?: number;
+  description?: string;
+  rarity?: string;
 }
 
 interface CrimeLogEntry {
@@ -55,6 +65,7 @@ interface VoxCityState {
   scavengingSkill: number;
   collegeClasses: number;
   inventory: InventoryState;
+  inventoryItems: InventoryItem[];
   crimeLog: CrimeLogEntry[];
   isDev: boolean;
   activeGym: string;
@@ -123,10 +134,11 @@ const subNavBySection: Record<SectionId, string[]> = {
 
 const defaultState: VoxCityState = {
   battle: { ferocity: 5, agility: 5, instinctCombat: 5, grit: 5 },
-  resources: { energy: 100, maxEnergy: 100, nerve: 10, maxNerve: 10, happy: 100, maxHappy: 100, life: 100, maxLife: 100 },
+  resources: { energy: 100, maxEnergy: 100, nerve: 10, maxNerve: 10, happy: 100, maxHappy: 100, life: 100, maxLife: 100, nextMoraleResetAt: null },
   scavengingSkill: 1,
   collegeClasses: 0,
   inventory: { scrap: 0, components: 0, rareTech: 0 },
+  inventoryItems: [],
   crimeLog: [],
   isDev: false,
   activeGym: 'scrap-yard-gym',
@@ -164,6 +176,10 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [notice, setNotice] = useState('City systems online.');
   const [trainingTrains, setTrainingTrains] = useState<number>(1);
   const [selectedGymSlug, setSelectedGymSlug] = useState<string>('');
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryCategory, setInventoryCategory] = useState('all');
+  const [inventoryView, setInventoryView] = useState<'list' | 'grid'>('list');
+  const [moraleResetNow, setMoraleResetNow] = useState(Date.now());
   const [devRestore, setDevRestore] = useState({
     life: 10,
     stamina: 10,
@@ -187,6 +203,12 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     activeGym ??
     state.gyms[0];
   const formatStat = (value: number) => Number(value || 0).toFixed(4);
+  const nextMoraleResetMs = state.resources.nextMoraleResetAt ? new Date(state.resources.nextMoraleResetAt).getTime() : 0;
+  const moraleOverMax = state.resources.happy > state.resources.maxHappy;
+  const moraleResetSeconds = moraleOverMax && nextMoraleResetMs > moraleResetNow
+    ? Math.floor((nextMoraleResetMs - moraleResetNow) / 1000)
+    : 0;
+  const moraleResetTimer = `${Math.floor(moraleResetSeconds / 60)}:${String(moraleResetSeconds % 60).padStart(2, '0')}`;
   const unlockedGymSet = useMemo(() => new Set(state.gyms.filter((g) => g.unlocked).map((g) => g.slug)), [state.gyms]);
   const canPurchaseGym = (slug: string) => {
     if (unlockedGymSet.has(slug)) return false;
@@ -270,6 +292,20 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       setSelectedGymSlug(activeGym.slug);
     }
   }, [activeGym?.slug, selectedGymSlug]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setMoraleResetNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const filteredInventoryItems = useMemo(() => {
+    const term = inventorySearch.trim().toLowerCase();
+    return state.inventoryItems.filter((item) => {
+      const categoryMatch = inventoryCategory === 'all' || item.category === inventoryCategory;
+      const textMatch = term.length === 0 || item.name.toLowerCase().includes(term);
+      return categoryMatch && textMatch;
+    });
+  }, [state.inventoryItems, inventorySearch, inventoryCategory]);
 
   const loadState = async (silent = false) => {
     if (!user) {
@@ -551,6 +587,149 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       );
     }
 
+    if (section === 'items') {
+      const filterButtons: Array<{ id: string; label: string; icon: string }> = [
+        { id: 'all', label: 'All', icon: '☰' },
+        { id: 'favorite', label: 'Fav', icon: '★' },
+        { id: 'weapon', label: 'Weapons', icon: '✦' },
+        { id: 'armor', label: 'Armor', icon: '⬒' },
+        { id: 'medical', label: 'Medical', icon: '+' },
+        { id: 'drug', label: 'Drugs', icon: '◉' },
+        { id: 'temporary', label: 'Temp', icon: '⌛' },
+        { id: 'special', label: 'Special', icon: '◆' },
+        { id: 'jewelry', label: 'Jewelry', icon: '◇' },
+        { id: 'book', label: 'Books', icon: '▤' },
+        { id: 'morale', label: 'Morale', icon: '🍬' },
+        { id: 'misc', label: 'Misc', icon: '◌' },
+      ];
+
+      return (
+        <div className="space-y-2">
+          <div className="rounded border border-[#323b48] bg-[#171c24]">
+            <div className="flex items-center justify-between border-b border-[#2c3441] px-2 py-1 text-[11px]">
+              <div className="flex gap-1">
+                {['Items', 'Ammo', 'Mods', 'Trades', 'Bazaar', 'Display'].map((tab) => (
+                  <button
+                    key={tab}
+                    className={`rounded px-2 py-1 ${tab === 'Items' ? 'bg-[#2f3746] text-[#eef2f8]' : 'bg-[#1d2430] text-[#95a8c0]'}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setInventoryView('list')}
+                  className={`rounded px-2 py-1 ${inventoryView === 'list' ? 'bg-[#2f3746] text-[#e8edf5]' : 'bg-[#1d2430] text-[#94a6be]'}`}
+                >
+                  List
+                </button>
+                <button
+                  onClick={() => setInventoryView('grid')}
+                  className={`rounded px-2 py-1 ${inventoryView === 'grid' ? 'bg-[#2f3746] text-[#e8edf5]' : 'bg-[#1d2430] text-[#94a6be]'}`}
+                >
+                  Grid
+                </button>
+                <button className="rounded bg-[#1d2430] px-2 py-1 text-[#94a6be]">?</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[130px_minmax(0,1fr)_220px] gap-2 border-b border-[#2c3441] bg-[#1b222d] p-2">
+              <div className="aspect-square max-h-[120px] rounded border border-[#3b4454] bg-[#101720] p-1 text-[10px] text-[#8ea2bd]">
+                Avatar Preview
+              </div>
+              <div className="rounded border border-[#3b4454] bg-[#101720] p-2 text-[11px] text-[#9fb0c5]">
+                <div className="mb-1 flex items-center justify-between">
+                  <button className="rounded border border-[#3a4659] px-1">◀</button>
+                  <span className="text-[#d2dbe8]">Secondary</span>
+                  <button className="rounded border border-[#3a4659] px-1">▶</button>
+                </div>
+                <div className="h-14 rounded border border-dashed border-[#3a4659] bg-[#151c27]" />
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {['Primary', 'Secondary', 'Melee', 'Temp', 'Head', 'Body', 'Hands', 'Legs', 'Feet'].map((slot) => (
+                  <div key={slot} className="h-9 rounded border border-[#3a4555] bg-[#131a24] px-1 py-0.5 text-[9px] text-[#7d8ea5]">
+                    {slot}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-[#2c3441] px-2 py-1 text-xs">
+              <span className="text-[#dbe4f0]">Your items - {inventoryCategory === 'all' ? 'All' : inventoryCategory}</span>
+              <input
+                value={inventorySearch}
+                onChange={(e) => setInventorySearch(e.target.value)}
+                placeholder="search..."
+                className="w-52 rounded border border-[#3a4659] bg-[#131a24] px-2 py-1 text-xs text-[#dbe4f0]"
+              />
+            </div>
+
+            <div className="flex gap-1 border-b border-[#2c3441] px-2 py-1">
+              {filterButtons.map((filter) => (
+                <button
+                  key={filter.id}
+                  title={filter.label}
+                  onClick={() => setInventoryCategory(filter.id)}
+                  className={`h-6 w-6 rounded border text-[11px] ${
+                    inventoryCategory === filter.id
+                      ? 'border-cyan-500 bg-[#1f3448] text-[#d8f2ff]'
+                      : 'border-[#3a4659] bg-[#141b25] text-[#8ea2bd]'
+                  }`}
+                >
+                  {filter.icon}
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-[380px] overflow-auto">
+              <div className="grid grid-cols-[38px_minmax(0,1fr)_35px_45px_45px_45px] border-b border-[#2c3441] bg-[#131a24] px-2 py-1 text-[10px] uppercase tracking-wide text-[#8194ab]">
+                <span>Icon</span>
+                <span>Name</span>
+                <span className="text-center">Eq</span>
+                <span className="text-center">Use</span>
+                <span className="text-center">Sell</span>
+                <span className="text-center">Trade</span>
+              </div>
+              {filteredInventoryItems.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-[#8ea1b8]">No items match this filter.</p>
+              ) : inventoryView === 'grid' ? (
+                <div className="grid grid-cols-5 gap-1 p-2">
+                  {filteredInventoryItems.map((item) => (
+                    <div key={item.name} className="rounded border border-[#344053] bg-[#151d28] p-1 text-[10px]">
+                      <div className="mb-1 h-9 rounded bg-[#0f1620]" />
+                      <p className="truncate text-[#d9e3f0]">{item.name}</p>
+                      <p className="text-[#8ea1b8]">x{item.quantity}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                filteredInventoryItems.map((item) => (
+                  <div key={item.name} className="grid grid-cols-[38px_minmax(0,1fr)_35px_45px_45px_45px] items-center border-b border-[#273140] px-2 py-1 text-xs hover:bg-[#1a2330]">
+                    <div className="h-7 w-7 rounded border border-[#3a4659] bg-[#0f1620]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[#dfe8f4]">{item.name} {item.quantity > 1 ? `x${item.quantity}` : ''}</p>
+                      <p className="truncate text-[10px] text-[#8fa2ba]">{item.description ?? item.category}</p>
+                    </div>
+                    <span className="text-center text-[#6f8299]">✓</span>
+                    <button
+                      disabled={busy || item.quantity <= 0 || (!item.moraleBoost && item.category !== 'morale')}
+                      onClick={() => void runAction('use_item', { itemName: item.name })}
+                      className="rounded border border-[#355069] px-1 py-0.5 text-[10px] text-[#a8dcff] disabled:opacity-40"
+                    >
+                      Use
+                    </button>
+                    <button className="rounded border border-[#4c4d43] px-1 py-0.5 text-[10px] text-[#c9c6a4]">Sell</button>
+                    <button className="rounded border border-[#43455a] px-1 py-0.5 text-[10px] text-[#a9b3cd]">Trade</button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (section === 'academy') {
       return (
         <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
@@ -643,11 +822,29 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                 </div>
               )}
 
-              <div className="ml-auto flex flex-wrap gap-2 text-xs">
-                <span className="rounded border border-[#4a3940] bg-[#2a1d22] px-2 py-1">Life {state.resources.life}/{state.resources.maxLife}</span>
-                <span className="rounded border border-[#35506c] bg-[#1a2a3a] px-2 py-1">Stamina {state.resources.energy}/{state.resources.maxEnergy}</span>
-                <span className="rounded border border-[#3f5c35] bg-[#1e3121] px-2 py-1">Instinct {state.resources.nerve}/{state.resources.maxNerve}</span>
-                <span className="rounded border border-[#6a5a2f] bg-[#352d1b] px-2 py-1">Morale {state.resources.happy}/{state.resources.maxHappy}</span>
+              <div className="ml-auto grid min-w-[320px] grid-cols-2 gap-x-3 gap-y-1 text-[11px] sm:grid-cols-4">
+                {([
+                  ['Life', state.resources.life, state.resources.maxLife, 'bg-rose-700'],
+                  ['Stamina', state.resources.energy, state.resources.maxEnergy, 'bg-cyan-700'],
+                  ['Instinct', state.resources.nerve, state.resources.maxNerve, 'bg-emerald-700'],
+                  ['Morale', state.resources.happy, state.resources.maxHappy, 'bg-amber-600'],
+                ] as Array<[string, number, number, string]>).map(([label, value, max, barColor]) => {
+                  const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+                  return (
+                    <div key={label}>
+                      <div className="mb-0.5 flex items-center justify-between text-[10px] text-[#c7d3e4]">
+                        <span>{label}</span>
+                        <span>{value}/{max}{label === 'Morale' && moraleOverMax ? ` (+${value - max})` : ''}</span>
+                      </div>
+                      <div className="relative h-4 overflow-hidden rounded border border-[#405169] bg-[#101720]">
+                        <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {label === 'Morale' && moraleOverMax && (
+                        <p className="mt-0.5 text-[10px] text-[#f2d690]">Reset in {moraleResetTimer}</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

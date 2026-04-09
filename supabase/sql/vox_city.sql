@@ -29,10 +29,12 @@ create table if not exists public.vox_city_profiles (
   scrap integer not null default 0,
   components integer not null default 0,
   rare_tech integer not null default 0,
+  inventory_items jsonb not null default '[]'::jsonb,
   crime_log jsonb not null default '[]'::jsonb,
   regen_energy_at timestamptz not null default now(),
   regen_nerve_at timestamptz not null default now(),
   regen_happy_at timestamptz not null default now(),
+  morale_reset_checked_at timestamptz not null default now(),
   regen_life_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -122,6 +124,8 @@ alter table public.vox_city_profiles
   add column if not exists gym_agility double precision not null default 1,
   add column if not exists gym_instinct_combat double precision not null default 1,
   add column if not exists gym_grit double precision not null default 1,
+  add column if not exists inventory_items jsonb not null default '[]'::jsonb,
+  add column if not exists morale_reset_checked_at timestamptz not null default now(),
   add column if not exists active_gym text not null default 'scrap-yard-gym';
 
 alter table public.vox_city_profiles enable row level security;
@@ -177,6 +181,8 @@ set search_path = public
 as $$
 declare
   v_now timestamptz := now();
+  v_quarter_floor timestamptz;
+  v_next_quarter timestamptz;
   v_energy_ticks integer;
   v_nerve_ticks integer;
   v_happy_ticks integer;
@@ -184,6 +190,7 @@ declare
   v_life_gain integer;
   v_is_dev boolean := false;
   v_gyms jsonb := '[]'::jsonb;
+  v_inventory_items jsonb := '[]'::jsonb;
   v_profile public.vox_city_profiles%rowtype;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
@@ -221,6 +228,16 @@ begin
     v_profile.active_gym := 'scrap-yard-gym';
   end if;
 
+  v_quarter_floor := date_trunc('hour', v_now) + ((floor(extract(minute from v_now) / 15)::int) * interval '15 minutes');
+  v_next_quarter := v_quarter_floor + interval '15 minutes';
+
+  if v_profile.morale_reset_checked_at < v_quarter_floor and v_profile.happy > v_profile.max_happy then
+    v_profile.happy := v_profile.max_happy;
+  end if;
+  if v_profile.morale_reset_checked_at < v_quarter_floor then
+    v_profile.morale_reset_checked_at := v_quarter_floor;
+  end if;
+
   v_energy_ticks := floor(extract(epoch from (v_now - v_profile.regen_energy_at)) / 300);
   if v_energy_ticks > 0 then
     v_profile.energy := least(v_profile.max_energy, v_profile.energy + v_energy_ticks * 5);
@@ -235,7 +252,9 @@ begin
 
   v_happy_ticks := floor(extract(epoch from (v_now - v_profile.regen_happy_at)) / 900);
   if v_happy_ticks > 0 then
-    v_profile.happy := least(v_profile.max_happy, v_profile.happy + v_happy_ticks);
+    if v_profile.happy < v_profile.max_happy then
+      v_profile.happy := least(v_profile.max_happy, v_profile.happy + v_happy_ticks);
+    end if;
     v_profile.regen_happy_at := v_profile.regen_happy_at + (v_happy_ticks * interval '15 minutes');
   end if;
 
@@ -254,6 +273,7 @@ begin
         regen_energy_at = v_profile.regen_energy_at,
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
+        morale_reset_checked_at = v_profile.morale_reset_checked_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,
         updated_at = now()
@@ -286,6 +306,8 @@ begin
     on u.gym_slug = g.slug
    and u.user_id = p_user_id;
 
+  v_inventory_items := coalesce(v_profile.inventory_items, '[]'::jsonb);
+
   select (up.user_type = 'dev')
     into v_is_dev
   from public.user_profiles up
@@ -305,6 +327,7 @@ begin
       'maxNerve', v_profile.max_nerve,
       'happy', v_profile.happy,
       'maxHappy', v_profile.max_happy,
+      'nextMoraleResetAt', v_next_quarter,
       'life', v_profile.life,
       'maxLife', v_profile.max_life
     ),
@@ -315,6 +338,7 @@ begin
       'components', v_profile.components,
       'rareTech', v_profile.rare_tech
     ),
+    'inventoryItems', v_inventory_items,
     'crimeLog', coalesce(v_profile.crime_log, '[]'::jsonb),
     'isDev', coalesce(v_is_dev, false),
     'activeGym', v_profile.active_gym,
@@ -390,12 +414,32 @@ declare
   v_item_roll double precision;
   v_bundle_roll double precision;
   v_qty integer;
+  v_item_category text;
+  v_item_morale_boost integer := 0;
+  v_item_index integer;
+  v_existing_qty integer;
+  v_existing_item jsonb;
   v_skill_gain integer := 0;
   v_fail_text text;
   v_common_items text[] := array[
     'Rusted Bolt Cluster','Cracked Circuit Plate','Bent Alloy Shard','Scrap Wire Bundle',
     'Empty Fuel Cell','Broken Optic Lens','Worn Gear Cog','Charred Metal Fragment',
     'Loose Spring Pack','Shattered Glass Panel','Melted Plastic Chunk','Corroded Pipe Segment'
+  ];
+  v_candy_common_items text[] := array[
+    'Sugarroot Candy Strip','Foxfire Taffy','Dustberry Chew','Burnt Honey Bite','Glowgum Pellet',
+    'Sweet Rust Bar','Ember Sugar Cube','Caramel Ash Drop','Neon Jelly Nugget','Crackle Candy Shard'
+  ];
+  v_candy_mid_items text[] := array[
+    'Foxiz Delight Pack','Sweetwater Flask','Voxel Candy Cluster','Gilded Sugar Brick','Spiced Ember Treat',
+    'Velvet Chew Bar','Honeyflare Roll','Radiant Berry Mix','Golden Syrup Stick','Refined Glowgum Pack'
+  ];
+  v_candy_edgy_items text[] := array[
+    'Blackmarket Sweet Tab','Neon Bliss Capsule','Foxfire Infusion Vial','Dreamdust Candy','Overcharge Chew'
+  ];
+  v_candy_rare_items text[] := array[
+    'Pre-Fall Candy Tin','Royal Fox Feast Box','Vixenvox Festival Treat','Pack Celebration Bundle',
+    'Outmine Entertainment Disk (OED)'
   ];
   v_consumable_items text[] := array[
     'Patch Tape Roll','Basic Med Gel','Ration Pack','Dirty Water Flask',
@@ -850,13 +894,29 @@ begin
         end if;
 
         if v_item_rarity = 'Common' then
-          v_item_name := v_common_items[1 + floor(random() * array_length(v_common_items, 1))::integer];
+          if random() < 0.40 then
+            v_item_name := v_candy_common_items[1 + floor(random() * array_length(v_candy_common_items, 1))::integer];
+          else
+            v_item_name := v_common_items[1 + floor(random() * array_length(v_common_items, 1))::integer];
+          end if;
         elsif v_item_rarity = 'Consumable' then
-          v_item_name := v_consumable_items[1 + floor(random() * array_length(v_consumable_items, 1))::integer];
+          if random() < 0.45 then
+            v_item_name := v_candy_mid_items[1 + floor(random() * array_length(v_candy_mid_items, 1))::integer];
+          else
+            v_item_name := v_consumable_items[1 + floor(random() * array_length(v_consumable_items, 1))::integer];
+          end if;
         elsif v_item_rarity = 'Uncommon' then
-          v_item_name := v_uncommon_items[1 + floor(random() * array_length(v_uncommon_items, 1))::integer];
+          if random() < 0.30 then
+            v_item_name := v_candy_edgy_items[1 + floor(random() * array_length(v_candy_edgy_items, 1))::integer];
+          else
+            v_item_name := v_uncommon_items[1 + floor(random() * array_length(v_uncommon_items, 1))::integer];
+          end if;
         else
-          v_item_name := v_rare_items[1 + floor(random() * (array_length(v_rare_items, 1) - 1))::integer];
+          if random() < 0.40 then
+            v_item_name := v_candy_rare_items[1 + floor(random() * array_length(v_candy_rare_items, 1))::integer];
+          else
+            v_item_name := v_rare_items[1 + floor(random() * (array_length(v_rare_items, 1) - 1))::integer];
+          end if;
         end if;
       end if;
 
@@ -874,7 +934,7 @@ begin
       elsif v_item_rarity = 'Common' then
         v_scrap := case when v_outcome = 'Partial' then 1 + floor(random() * 3) when v_outcome = 'Success' then 2 + floor(random() * 4) else 4 + floor(random() * 6) end;
         v_profile.scrap := v_profile.scrap + v_scrap;
-        v_qty := v_scrap;
+        v_qty := greatest(1, floor(v_scrap / 2.0));
       elsif v_item_rarity = 'Consumable' then
         v_qty := case when v_outcome = 'Partial' then 1 when v_outcome = 'Success' then 1 + floor(random() * 2) else 2 + floor(random() * 2) end;
         v_profile.components := v_profile.components + v_qty;
@@ -888,6 +948,65 @@ begin
         v_profile.rare_tech := v_profile.rare_tech + 1;
         if v_outcome = 'Exceptional' and random() < 0.45 then
           v_profile.components := v_profile.components + 2;
+        end if;
+      end if;
+
+      if v_item_name = any(v_candy_common_items) then
+        v_item_category := 'morale';
+        v_item_morale_boost := 8 + floor(random() * 6);
+      elsif v_item_name = any(v_candy_mid_items) then
+        v_item_category := 'morale';
+        v_item_morale_boost := 15 + floor(random() * 10);
+      elsif v_item_name = any(v_candy_edgy_items) then
+        v_item_category := 'morale';
+        v_item_morale_boost := 22 + floor(random() * 14);
+      elsif v_item_name = any(v_candy_rare_items) then
+        v_item_category := 'morale';
+        if v_item_name = 'Outmine Entertainment Disk (OED)' then
+          v_item_morale_boost := 80 + floor(random() * 40);
+        else
+          v_item_morale_boost := 35 + floor(random() * 20);
+        end if;
+      elsif v_item_rarity = 'Common' then
+        v_item_category := 'misc';
+        v_item_morale_boost := 0;
+      elsif v_item_rarity = 'Consumable' then
+        v_item_category := 'temporary';
+        v_item_morale_boost := 0;
+      elsif v_item_rarity = 'Uncommon' then
+        v_item_category := 'special';
+        v_item_morale_boost := 0;
+      else
+        v_item_category := 'special';
+        v_item_morale_boost := 0;
+      end if;
+
+      if v_item_name <> 'Hidden Stash Cache' then
+        select (j.idx - 1)::integer, j.value
+          into v_item_index, v_existing_item
+        from jsonb_array_elements(coalesce(v_profile.inventory_items, '[]'::jsonb)) with ordinality as j(value, idx)
+        where j.value->>'name' = v_item_name
+        limit 1;
+
+        if found then
+          v_existing_qty := coalesce((v_existing_item->>'quantity')::integer, 0);
+          v_profile.inventory_items := jsonb_set(
+            coalesce(v_profile.inventory_items, '[]'::jsonb),
+            array[v_item_index::text, 'quantity'],
+            to_jsonb(v_existing_qty + v_qty),
+            false
+          );
+        else
+          v_profile.inventory_items := coalesce(v_profile.inventory_items, '[]'::jsonb) || jsonb_build_array(
+            jsonb_build_object(
+              'name', v_item_name,
+              'category', v_item_category,
+              'quantity', v_qty,
+              'moraleBoost', v_item_morale_boost,
+              'rarity', v_item_rarity,
+              'description', v_item_desc
+            )
+          );
         end if;
       end if;
 
@@ -933,6 +1052,64 @@ begin
     end if;
 
     v_notice := format('%s: %s', initcap(v_approach), v_summary);
+
+  elsif p_action = 'use_item' then
+    v_item_name := coalesce(p_payload ->> 'itemName', '');
+    if v_item_name = '' then
+      raise exception 'Missing item name.';
+    end if;
+
+    select (j.idx - 1)::integer, j.value
+      into v_item_index, v_existing_item
+    from jsonb_array_elements(coalesce(v_profile.inventory_items, '[]'::jsonb)) with ordinality as j(value, idx)
+    where j.value->>'name' = v_item_name
+    limit 1;
+
+    if not found then
+      raise exception 'Item not found.';
+    end if;
+
+    v_existing_qty := coalesce((v_existing_item->>'quantity')::integer, 0);
+    if v_existing_qty <= 0 then
+      raise exception 'No remaining quantity.';
+    end if;
+
+    v_item_category := coalesce(v_existing_item->>'category', 'misc');
+    v_item_morale_boost := coalesce((v_existing_item->>'moraleBoost')::integer, 0);
+    if v_item_category <> 'morale' or v_item_morale_boost <= 0 then
+      raise exception 'This item cannot be used right now.';
+    end if;
+
+    if v_item_name = 'Dreamdust Candy' and random() < 0.35 then
+      if random() < 0.5 then
+        v_item_morale_boost := v_item_morale_boost + (5 + floor(random() * 8));
+      else
+        v_item_morale_boost := greatest(1, v_item_morale_boost - (4 + floor(random() * 6)));
+      end if;
+    elsif v_item_name = 'Overcharge Chew' and random() < 0.35 then
+      v_profile.energy := greatest(0, v_profile.energy - (2 + floor(random() * 4)));
+    elsif v_item_name = 'Blackmarket Sweet Tab' and random() < 0.20 then
+      v_profile.life := greatest(0, v_profile.life - (1 + floor(random() * 3)));
+    end if;
+
+    v_profile.happy := v_profile.happy + v_item_morale_boost;
+
+    if v_existing_qty = 1 then
+      v_profile.inventory_items := (
+        select coalesce(jsonb_agg(value), '[]'::jsonb)
+        from jsonb_array_elements(coalesce(v_profile.inventory_items, '[]'::jsonb)) with ordinality as j(value, idx)
+        where (j.idx - 1)::integer <> v_item_index
+      );
+    else
+      v_profile.inventory_items := jsonb_set(
+        coalesce(v_profile.inventory_items, '[]'::jsonb),
+        array[v_item_index::text, 'quantity'],
+        to_jsonb(v_existing_qty - 1),
+        false
+      );
+    end if;
+
+    v_notice := format('Used %s (+%s Morale).', v_item_name, v_item_morale_boost);
 
   elsif p_action = 'dev_restore_vital' then
     if not coalesce(v_is_dev, false) then
@@ -998,10 +1175,12 @@ begin
         scrap = v_profile.scrap,
         components = v_profile.components,
         rare_tech = v_profile.rare_tech,
+        inventory_items = coalesce(v_profile.inventory_items, '[]'::jsonb),
         crime_log = v_profile.crime_log,
         regen_energy_at = v_profile.regen_energy_at,
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
+        morale_reset_checked_at = v_profile.morale_reset_checked_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,
         updated_at = now()

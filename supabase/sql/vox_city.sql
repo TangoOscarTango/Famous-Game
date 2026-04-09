@@ -384,6 +384,81 @@ declare
   v_wallet_balance bigint;
   v_vital text;
   v_amount integer;
+  v_item_name text;
+  v_item_desc text;
+  v_item_rarity text;
+  v_item_roll double precision;
+  v_bundle_roll double precision;
+  v_qty integer;
+  v_skill_gain integer := 0;
+  v_fail_text text;
+  v_common_items text[] := array[
+    'Rusted Bolt Cluster','Cracked Circuit Plate','Bent Alloy Shard','Scrap Wire Bundle',
+    'Empty Fuel Cell','Broken Optic Lens','Worn Gear Cog','Charred Metal Fragment',
+    'Loose Spring Pack','Shattered Glass Panel','Melted Plastic Chunk','Corroded Pipe Segment'
+  ];
+  v_consumable_items text[] := array[
+    'Patch Tape Roll','Basic Med Gel','Ration Pack','Dirty Water Flask',
+    'Adrenal Shot','Focus Chew','Bandage Wrap','Energy Chew Stick'
+  ];
+  v_uncommon_items text[] := array[
+    'Charged Micro Cell','Clean Water Flask','Reinforced Scrap Plate','Salvaged Tool Kit',
+    'Signal Beacon Chip','Old World Coin','Mystery Injector','Unknown Powder Vial',
+    'Black-Market Capsule','Foxfire Stimulant'
+  ];
+  v_rare_items text[] := array[
+    'Pre-Fall Data Chip','Intact Energy Cell','Vixenvox Token','Pack Insignia','Hidden Stash Cache'
+  ];
+  v_desc_pool text[] := array[
+    'Barely holds together, but still worth a few FP.',
+    'Smells like chemicals. Probably still usable.',
+    'Someone hid this well. Not well enough.',
+    'Dust-caked, but the core still hums.',
+    'Could be junk, could be leverage in the right hands.',
+    'You brush off ash and pocket it before anyone notices.',
+    'Scuffed and ugly, but traders still buy this stuff.',
+    'It rattles when you move. That is usually a good sign.',
+    'Stamped with pre-fall markings almost worn away.',
+    'The casing is cracked, but the internals look stable.',
+    'Not pretty, but it might keep someone alive tonight.',
+    'Recovered from deep rubble and still intact.'
+  ];
+  v_fail_careful text[] := array[
+    'You map the room and find only dust.',
+    'You trace old footprints to a dead end.',
+    'A false panel leads nowhere useful.',
+    'Your route is clean, but already picked over.',
+    'Loose rubble collapses before you can reach the cache.',
+    'An empty locker clicks shut behind you.',
+    'You spend too long on a decoy compartment.',
+    'The tunnel looked promising, then ended in slag.',
+    'A scavenger beat you to every shelf.',
+    'You search methodically and come up dry.'
+  ];
+  v_fail_quick text[] := array[
+    'You rush the aisle and trigger a rustfall.',
+    'A fast snatch turns into a hard stumble.',
+    'You grab a fake crate and lose momentum.',
+    'A loose cable whips your leg as you sprint out.',
+    'You hit the wrong room and burn your window.',
+    'A door jams while you force it.',
+    'You snatch junk and drop it in the scramble.',
+    'Your shortcut was blocked with fresh debris.',
+    'You move too fast and miss every viable stash.',
+    'A panicked pull leaves you empty-handed.'
+  ];
+  v_fail_deep text[] := array[
+    'The deep shaft floods with toxic dust.',
+    'A support beam snaps and pins your route.',
+    'Your lamp fails in a collapsed pocket.',
+    'An old trap compartment detonates sparks.',
+    'You breach too deep and hit unstable flooring.',
+    'A sealed vault vents heat and forces retreat.',
+    'Your extraction path caves in behind you.',
+    'You force a hatch and catch shrapnel.',
+    'A hidden drop shaft clips you on descent.',
+    'The chamber is empty after all that risk.'
+  ];
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'Unauthorized';
@@ -698,37 +773,145 @@ begin
     end if;
 
     if v_outcome = 'Fail' then
-      v_gain := greatest(1, least(6, floor(2 + random() * 5 - v_profile.grit / 60.0)));
+      if v_approach = 'careful' then
+        v_fail_text := v_fail_careful[1 + floor(random() * array_length(v_fail_careful, 1))::integer];
+      elsif v_approach = 'quick' then
+        v_fail_text := v_fail_quick[1 + floor(random() * array_length(v_fail_quick, 1))::integer];
+      else
+        v_fail_text := v_fail_deep[1 + floor(random() * array_length(v_fail_deep, 1))::integer];
+      end if;
+
+      v_gain := greatest(1, least(8, floor(2 + random() * 6 - v_profile.grit / 55.0)));
+      if v_approach = 'deep' then
+        v_gain := v_gain + 1;
+      end if;
       v_profile.life := greatest(0, v_profile.life - v_gain);
-      v_profile.happy := greatest(0, v_profile.happy - 3);
-      v_summary := format('Found nothing. Minor injury (-%s Life).', v_gain);
-      v_gain := 1;
-    elsif v_outcome = 'Partial' then
-      v_scrap := 1 + floor(random() * 3);
-      v_profile.scrap := v_profile.scrap + v_scrap;
-      v_summary := format('Recovered %s scrap.', v_scrap);
-      v_gain := 1;
-    elsif v_outcome = 'Success' then
-      v_scrap := 3 + floor(random() * 4);
-      v_components := 1 + floor(random() * 2);
-      v_profile.scrap := v_profile.scrap + v_scrap;
-      v_profile.components := v_profile.components + v_components;
-      v_summary := format('Recovered %s scrap and %s components.', v_scrap, v_components);
-      v_gain := 2;
+      v_profile.happy := greatest(0, v_profile.happy - 2);
+      v_summary := format('%s (-%s Life).', v_fail_text, v_gain);
+      v_skill_gain := 1;
     else
-      v_components := 2 + floor(random() * 3);
-      v_profile.components := v_profile.components + v_components;
-      v_profile.rare_tech := v_profile.rare_tech + 1;
-      v_summary := format('Hidden stash: %s components and 1 rare tech.', v_components);
-      v_gain := 3;
+      v_item_roll := random();
+      v_bundle_roll := random();
+
+      if v_bundle_roll < 0.015 then
+        v_item_rarity := 'Rare';
+        v_item_name := 'Hidden Stash Cache';
+      else
+        if v_approach = 'careful' then
+          if v_outcome = 'Partial' then
+            if v_item_roll < 0.78 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.96 then v_item_rarity := 'Consumable';
+            else v_item_rarity := 'Uncommon'; end if;
+          elsif v_outcome = 'Success' then
+            if v_item_roll < 0.68 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.88 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.98 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          else
+            if v_item_roll < 0.52 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.76 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.92 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          end if;
+        elsif v_approach = 'quick' then
+          if v_outcome = 'Partial' then
+            if v_item_roll < 0.70 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.90 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.98 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          elsif v_outcome = 'Success' then
+            if v_item_roll < 0.60 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.80 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.94 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          else
+            if v_item_roll < 0.44 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.66 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.86 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          end if;
+        else
+          if v_outcome = 'Partial' then
+            if v_item_roll < 0.62 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.84 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.96 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          elsif v_outcome = 'Success' then
+            if v_item_roll < 0.50 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.72 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.90 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          else
+            if v_item_roll < 0.36 then v_item_rarity := 'Common';
+            elsif v_item_roll < 0.60 then v_item_rarity := 'Consumable';
+            elsif v_item_roll < 0.84 then v_item_rarity := 'Uncommon';
+            else v_item_rarity := 'Rare'; end if;
+          end if;
+        end if;
+
+        if v_item_rarity = 'Common' then
+          v_item_name := v_common_items[1 + floor(random() * array_length(v_common_items, 1))::integer];
+        elsif v_item_rarity = 'Consumable' then
+          v_item_name := v_consumable_items[1 + floor(random() * array_length(v_consumable_items, 1))::integer];
+        elsif v_item_rarity = 'Uncommon' then
+          v_item_name := v_uncommon_items[1 + floor(random() * array_length(v_uncommon_items, 1))::integer];
+        else
+          v_item_name := v_rare_items[1 + floor(random() * (array_length(v_rare_items, 1) - 1))::integer];
+        end if;
+      end if;
+
+      v_item_desc := v_desc_pool[1 + floor(random() * array_length(v_desc_pool, 1))::integer];
+
+      if v_item_name = 'Hidden Stash Cache' then
+        v_scrap := 4 + floor(random() * 6);
+        v_components := 2 + floor(random() * 4);
+        v_profile.scrap := v_profile.scrap + v_scrap;
+        v_profile.components := v_profile.components + v_components;
+        if random() < 0.35 then
+          v_profile.rare_tech := v_profile.rare_tech + 1;
+        end if;
+        v_qty := 1;
+      elsif v_item_rarity = 'Common' then
+        v_scrap := case when v_outcome = 'Partial' then 1 + floor(random() * 3) when v_outcome = 'Success' then 2 + floor(random() * 4) else 4 + floor(random() * 6) end;
+        v_profile.scrap := v_profile.scrap + v_scrap;
+        v_qty := v_scrap;
+      elsif v_item_rarity = 'Consumable' then
+        v_qty := case when v_outcome = 'Partial' then 1 when v_outcome = 'Success' then 1 + floor(random() * 2) else 2 + floor(random() * 2) end;
+        v_profile.components := v_profile.components + v_qty;
+      elsif v_item_rarity = 'Uncommon' then
+        v_components := case when v_outcome = 'Partial' then 1 + floor(random() * 2) when v_outcome = 'Success' then 2 + floor(random() * 2) else 3 + floor(random() * 3) end;
+        v_profile.components := v_profile.components + v_components;
+        v_profile.scrap := v_profile.scrap + greatest(1, floor(v_components / 2.0));
+        v_qty := v_components;
+      else
+        v_qty := 1;
+        v_profile.rare_tech := v_profile.rare_tech + 1;
+        if v_outcome = 'Exceptional' and random() < 0.45 then
+          v_profile.components := v_profile.components + 2;
+        end if;
+      end if;
+
+      if v_item_name = 'Hidden Stash Cache' then
+        v_summary := format('[Rare] Hidden Stash Cache x1. %s Bundle yielded %s scrap and %s components.', v_item_desc, v_scrap, v_components);
+      else
+        v_summary := format('[%s] %s x%s. %s', v_item_rarity, v_item_name, v_qty, v_item_desc);
+      end if;
+
+      if v_outcome = 'Partial' then
+        v_skill_gain := 1;
+      elsif v_outcome = 'Success' then
+        v_skill_gain := 2;
+      else
+        v_skill_gain := 3;
+      end if;
     end if;
 
     if v_approach = 'careful' then
-      v_gain := v_gain + 1;
+      v_skill_gain := v_skill_gain + 1;
     elsif v_approach = 'deep' then
-      v_gain := v_gain + 1;
+      v_skill_gain := v_skill_gain + 1;
     end if;
-    v_profile.scavenging_skill := v_profile.scavenging_skill + v_gain;
+    v_profile.scavenging_skill := v_profile.scavenging_skill + v_skill_gain;
 
     v_entry := jsonb_build_object(
       'id', gen_random_uuid(),

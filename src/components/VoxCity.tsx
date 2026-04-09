@@ -1103,14 +1103,15 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                             <div className="mt-1 h-2 rounded bg-[#0f1620]">
                               <div className="h-full rounded bg-cyan-700" style={{ width: `${progress}%` }} />
                             </div>
-                            <button
-                              disabled={claimDisabled}
-                              title={claimTitle}
-                              onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
-                              className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
-                            >
-                              Claim
-                            </button>
+                            <span className="inline-block" title={claimTitle}>
+                              <button
+                                disabled={claimDisabled}
+                                onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
+                                className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-40"
+                              >
+                                Claim
+                              </button>
+                            </span>
                           </div>
                         );
                       })}

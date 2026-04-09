@@ -111,6 +111,20 @@ alter table if exists public.vox_city_global_state
   alter column fp_value type numeric(18,8)
   using fp_value::numeric(18,8);
 
+create or replace function public.tc_to_fp(
+  p_tc_value numeric
+)
+returns bigint
+language sql
+immutable
+as $$
+  -- GLOBAL_TC_TO_FP_RATE = 1667
+  select greatest(
+    1::bigint,
+    round(coalesce(p_tc_value, 0) / 1667.0)::bigint
+  );
+$$;
+
 create table if not exists public.vox_city_gyms (
   slug text primary key,
   display_name text not null,
@@ -193,39 +207,60 @@ where gym_slug in ('pack-training-grounds', 'warclaw-conditioning-center', 'vixe
 delete from public.vox_city_gyms
 where slug in ('pack-training-grounds', 'warclaw-conditioning-center', 'vixenvox-athletic-complex');
 
+with gym_seed (
+  slug, display_name, sort_order, tier, tc_cost, energy_per_train, energy_required,
+  dot_ferocity, dot_agility, dot_instinct_combat, dot_grit
+) as (
+  values
+    ('scrap-yard-gym', 'Scrap Yard Gym', 1, 'lightweight', 10::numeric, 5, 0, 2.0, 2.0, 2.0, 2.0),
+    ('rustfang-fitness', 'Rustfang Fitness', 2, 'lightweight', 100::numeric, 5, 200, 2.4, 2.4, 2.8, 2.4),
+    ('iron-den', 'Iron Den', 3, 'lightweight', 250::numeric, 5, 500, 2.7, 3.2, 3.0, 2.7),
+    ('shoreline-brawlers', 'Shoreline Brawlers', 4, 'lightweight', 500::numeric, 5, 1000, 3.2, 3.2, 3.2, 3.2),
+    ('silverfang-gym', 'Silverfang Gym', 5, 'lightweight', 1000::numeric, 5, 2000, 3.4, 3.6, 3.4, 3.2),
+    ('vixen-form-studio', 'Vixen Form Studio', 6, 'lightweight', 2500::numeric, 5, 2750, 3.4, 3.6, 3.6, 3.8),
+    ('denmasters-pit', 'Denmasters Pit', 7, 'lightweight', 5000::numeric, 5, 3000, 3.7, 3.7, 3.7, 3.7),
+    ('vox-central-gym', 'Vox Central Gym', 8, 'lightweight', 10000::numeric, 5, 3500, 4.0, 4.0, 4.0, 4.0),
+    ('bonebreaker-yard', 'Bonebreaker Yard', 9, 'medium', 50000::numeric, 10, 4000, 4.8, 4.4, 4.0, 4.2),
+    ('pioneer-den', 'Pioneer Den', 10, 'medium', 100000::numeric, 10, 6000, 4.4, 4.6, 4.8, 4.4),
+    ('anomaly-forge', 'Anomaly Forge', 11, 'medium', 250000::numeric, 10, 7000, 5.0, 4.6, 5.2, 4.6),
+    ('core-facility', 'Core Facility', 12, 'medium', 500000::numeric, 10, 8000, 5.0, 5.2, 5.0, 5.0),
+    ('razortrack-fitness', 'Razortrack Fitness', 13, 'medium', 1000000::numeric, 10, 11000, 5.0, 5.4, 4.8, 5.2),
+    ('pulse-cardio-hub', 'Pulse Cardio Hub', 14, 'medium', 2000000::numeric, 10, 12420, 5.5, 5.7, 5.5, 5.2),
+    ('lowerbody-forge', 'Lowerbody Forge', 15, 'medium', 3000000::numeric, 10, 18000, 5.5, 5.5, 5.5, 5.7),
+    ('deep-burn-complex', 'Deep Burn Complex', 16, 'medium', 5000000::numeric, 10, 18100, 6.0, 6.0, 6.0, 6.0),
+    ('apollo-den', 'Apollo Den', 17, 'heavyweight', 7500000::numeric, 10, 24140, 6.0, 6.2, 6.4, 6.2),
+    ('iron-armory', 'Iron Armory', 18, 'heavyweight', 10000000::numeric, 10, 31260, 6.5, 6.4, 6.2, 6.2),
+    ('force-conditioning', 'Force Conditioning', 19, 'heavyweight', 15000000::numeric, 10, 36610, 6.4, 6.5, 6.4, 6.8),
+    ('cha-den-arena', 'Cha Den Arena', 20, 'heavyweight', 20000000::numeric, 10, 46640, 6.4, 6.4, 6.8, 7.0),
+    ('atlas-stronghold', 'Atlas Stronghold', 21, 'heavyweight', 30000000::numeric, 10, 56520, 7.0, 6.4, 6.4, 6.5),
+    ('last-round-pit', 'Last Round Pit', 22, 'heavyweight', 50000000::numeric, 10, 67775, 6.8, 6.5, 7.0, 6.5),
+    ('the-edge-arena', 'The Edge Arena', 23, 'heavyweight', 75000000::numeric, 10, 84535, 6.8, 7.0, 7.0, 6.8),
+    ('apex-predator-facility', 'Apex Predator Facility', 24, 'heavyweight', 100000000::numeric, 10, 106305, 7.3, 7.3, 7.3, 7.3),
+    ('fangforge', 'Fangforge', 25, 'special', 120000000::numeric, 50, 106305, 9.5, 7.2, 7.2, 7.2),
+    ('ghoststep-arena', 'Ghoststep Arena', 26, 'special', 120000000::numeric, 50, 106305, 7.2, 9.5, 7.2, 7.2),
+    ('shadow-reflex-lab', 'Shadow Reflex Lab', 27, 'special', 120000000::numeric, 50, 106305, 7.2, 7.2, 9.5, 7.2),
+    ('ironhide-bastion', 'Ironhide Bastion', 28, 'special', 120000000::numeric, 50, 106305, 7.2, 7.2, 7.2, 9.5)
+)
 insert into public.vox_city_gyms (
   slug, display_name, sort_order, tier, fp_cost, energy_per_train, energy_required,
   dot_ferocity, dot_agility, dot_instinct_combat, dot_grit
 )
-values
-  ('scrap-yard-gym', 'Scrap Yard Gym', 1, 'lightweight', 10, 5, 0, 2.0, 2.0, 2.0, 2.0),
-  ('rustfang-fitness', 'Rustfang Fitness', 2, 'lightweight', 100, 5, 200, 2.4, 2.4, 2.8, 2.4),
-  ('iron-den', 'Iron Den', 3, 'lightweight', 250, 5, 500, 2.7, 3.2, 3.0, 2.7),
-  ('shoreline-brawlers', 'Shoreline Brawlers', 4, 'lightweight', 500, 5, 1000, 3.2, 3.2, 3.2, 3.2),
-  ('silverfang-gym', 'Silverfang Gym', 5, 'lightweight', 1000, 5, 2000, 3.4, 3.6, 3.4, 3.2),
-  ('vixen-form-studio', 'Vixen Form Studio', 6, 'lightweight', 2500, 5, 2750, 3.4, 3.6, 3.6, 3.8),
-  ('denmasters-pit', 'Denmasters Pit', 7, 'lightweight', 5000, 5, 3000, 3.7, 3.7, 3.7, 3.7),
-  ('vox-central-gym', 'Vox Central Gym', 8, 'lightweight', 10000, 5, 3500, 4.0, 4.0, 4.0, 4.0),
-  ('bonebreaker-yard', 'Bonebreaker Yard', 9, 'medium', 50000, 10, 4000, 4.8, 4.4, 4.0, 4.2),
-  ('pioneer-den', 'Pioneer Den', 10, 'medium', 100000, 10, 6000, 4.4, 4.6, 4.8, 4.4),
-  ('anomaly-forge', 'Anomaly Forge', 11, 'medium', 250000, 10, 7000, 5.0, 4.6, 5.2, 4.6),
-  ('core-facility', 'Core Facility', 12, 'medium', 500000, 10, 8000, 5.0, 5.2, 5.0, 5.0),
-  ('razortrack-fitness', 'Razortrack Fitness', 13, 'medium', 1000000, 10, 11000, 5.0, 5.4, 4.8, 5.2),
-  ('pulse-cardio-hub', 'Pulse Cardio Hub', 14, 'medium', 2000000, 10, 12420, 5.5, 5.7, 5.5, 5.2),
-  ('lowerbody-forge', 'Lowerbody Forge', 15, 'medium', 3000000, 10, 18000, 5.5, 5.5, 5.5, 5.7),
-  ('deep-burn-complex', 'Deep Burn Complex', 16, 'medium', 5000000, 10, 18100, 6.0, 6.0, 6.0, 6.0),
-  ('apollo-den', 'Apollo Den', 17, 'heavyweight', 7500000, 10, 24140, 6.0, 6.2, 6.4, 6.2),
-  ('iron-armory', 'Iron Armory', 18, 'heavyweight', 10000000, 10, 31260, 6.5, 6.4, 6.2, 6.2),
-  ('force-conditioning', 'Force Conditioning', 19, 'heavyweight', 15000000, 10, 36610, 6.4, 6.5, 6.4, 6.8),
-  ('cha-den-arena', 'Cha Den Arena', 20, 'heavyweight', 20000000, 10, 46640, 6.4, 6.4, 6.8, 7.0),
-  ('atlas-stronghold', 'Atlas Stronghold', 21, 'heavyweight', 30000000, 10, 56520, 7.0, 6.4, 6.4, 6.5),
-  ('last-round-pit', 'Last Round Pit', 22, 'heavyweight', 50000000, 10, 67775, 6.8, 6.5, 7.0, 6.5),
-  ('the-edge-arena', 'The Edge Arena', 23, 'heavyweight', 75000000, 10, 84535, 6.8, 7.0, 7.0, 6.8),
-  ('apex-predator-facility', 'Apex Predator Facility', 24, 'heavyweight', 100000000, 10, 106305, 7.3, 7.3, 7.3, 7.3),
-  ('fangforge', 'Fangforge', 25, 'special', 120000000, 50, 106305, 9.5, 7.2, 7.2, 7.2),
-  ('ghoststep-arena', 'Ghoststep Arena', 26, 'special', 120000000, 50, 106305, 7.2, 9.5, 7.2, 7.2),
-  ('shadow-reflex-lab', 'Shadow Reflex Lab', 27, 'special', 120000000, 50, 106305, 7.2, 7.2, 9.5, 7.2),
-  ('ironhide-bastion', 'Ironhide Bastion', 28, 'special', 120000000, 50, 106305, 7.2, 7.2, 7.2, 9.5)
+select
+  slug,
+  display_name,
+  sort_order,
+  tier,
+  case
+    when slug = 'apex-predator-facility' then 60000
+    else least(60000::bigint, public.tc_to_fp(tc_cost))
+  end as fp_cost,
+  energy_per_train,
+  energy_required,
+  dot_ferocity,
+  dot_agility,
+  dot_instinct_combat,
+  dot_grit
+from gym_seed
 on conflict (slug) do update
 set display_name = excluded.display_name,
     sort_order = excluded.sort_order,
@@ -1275,6 +1310,11 @@ begin
       set balance_sats = balance_sats - v_gain,
           updated_at = now()
     where user_id = p_user_id;
+
+    insert into public.vox_city_global_state (key, fp_value)
+    values ('global_treasury_fp', v_gain)
+    on conflict (key) do update
+      set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
 
     insert into public.wallet_ledger (
       id, user_id, direction, amount_sats, source, note, status, created_at

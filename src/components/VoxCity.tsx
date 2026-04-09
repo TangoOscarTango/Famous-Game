@@ -341,7 +341,17 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     state.gyms.find((g) => g.slug === selectedGymSlug) ??
     activeGym ??
     state.gyms[0];
-  const formatStat = (value: number) => Number(value || 0).toFixed(4);
+  const formatStat = (value: number) => {
+    const n = Number(value || 0);
+    const abs = Math.abs(n);
+    const decimals =
+      abs >= 100000 ? 0 :
+      abs >= 10000 ? 1 :
+      abs >= 1000 ? 2 :
+      abs >= 100 ? 3 :
+      4;
+    return n.toFixed(decimals);
+  };
   const nextMoraleResetMs = state.resources.nextMoraleResetAt ? new Date(state.resources.nextMoraleResetAt).getTime() : 0;
   const moraleOverMax = state.resources.happy > state.resources.maxHappy;
   const moraleResetSeconds = moraleOverMax && nextMoraleResetMs > moraleResetNow

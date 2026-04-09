@@ -291,25 +291,6 @@ begin
   from public.user_profiles up
   where up.user_id = p_user_id;
 
-  select g.*
-    into v_gym
-  from public.vox_city_gyms g
-  join public.vox_city_gym_unlocks u
-    on u.gym_slug = g.slug
-   and u.user_id = p_user_id
-  where g.slug = v_profile.active_gym;
-
-  if not found then
-    select g.*
-      into v_gym
-    from public.vox_city_gyms g
-    where g.slug = 'scrap-yard-gym';
-    v_profile.active_gym := 'scrap-yard-gym';
-    insert into public.vox_city_gym_unlocks (user_id, gym_slug)
-    values (p_user_id, 'scrap-yard-gym')
-    on conflict (user_id, gym_slug) do nothing;
-  end if;
-
   return jsonb_build_object(
     'battle', jsonb_build_object(
       'ferocity', v_profile.ferocity,

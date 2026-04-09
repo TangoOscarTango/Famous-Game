@@ -31,6 +31,10 @@ create table if not exists public.vox_city_profiles (
   rare_tech integer not null default 0,
   inventory_items jsonb not null default '[]'::jsonb,
   crime_log jsonb not null default '[]'::jsonb,
+  medical_cooldown_seconds integer not null default 0,
+  booster_cooldown_seconds integer not null default 0,
+  drug_cooldown_seconds integer not null default 0,
+  last_cooldown_processed_at timestamptz not null default now(),
   regen_energy_at timestamptz not null default now(),
   regen_nerve_at timestamptz not null default now(),
   regen_happy_at timestamptz not null default now(),
@@ -125,6 +129,10 @@ alter table public.vox_city_profiles
   add column if not exists gym_instinct_combat double precision not null default 1,
   add column if not exists gym_grit double precision not null default 1,
   add column if not exists inventory_items jsonb not null default '[]'::jsonb,
+  add column if not exists medical_cooldown_seconds integer not null default 0,
+  add column if not exists booster_cooldown_seconds integer not null default 0,
+  add column if not exists drug_cooldown_seconds integer not null default 0,
+  add column if not exists last_cooldown_processed_at timestamptz not null default now(),
   add column if not exists morale_reset_checked_at timestamptz not null default now(),
   add column if not exists active_gym text not null default 'scrap-yard-gym';
 
@@ -183,6 +191,7 @@ declare
   v_now timestamptz := now();
   v_quarter_floor timestamptz;
   v_next_quarter timestamptz;
+  v_elapsed_seconds integer := 0;
   v_energy_ticks integer;
   v_nerve_ticks integer;
   v_happy_ticks integer;
@@ -228,6 +237,14 @@ begin
     v_profile.active_gym := 'scrap-yard-gym';
   end if;
 
+  v_elapsed_seconds := greatest(0, floor(extract(epoch from (v_now - v_profile.last_cooldown_processed_at)))::integer);
+  if v_elapsed_seconds > 0 then
+    v_profile.medical_cooldown_seconds := greatest(0, v_profile.medical_cooldown_seconds - v_elapsed_seconds);
+    v_profile.booster_cooldown_seconds := greatest(0, v_profile.booster_cooldown_seconds - v_elapsed_seconds);
+    v_profile.drug_cooldown_seconds := greatest(0, v_profile.drug_cooldown_seconds - v_elapsed_seconds);
+    v_profile.last_cooldown_processed_at := v_now;
+  end if;
+
   v_quarter_floor := date_trunc('hour', v_now) + ((floor(extract(minute from v_now) / 15)::int) * interval '15 minutes');
   v_next_quarter := v_quarter_floor + interval '15 minutes';
 
@@ -240,7 +257,9 @@ begin
 
   v_energy_ticks := floor(extract(epoch from (v_now - v_profile.regen_energy_at)) / 300);
   if v_energy_ticks > 0 then
-    v_profile.energy := least(v_profile.max_energy, v_profile.energy + v_energy_ticks * 5);
+    if v_profile.energy < v_profile.max_energy then
+      v_profile.energy := least(v_profile.max_energy, v_profile.energy + v_energy_ticks * 5);
+    end if;
     v_profile.regen_energy_at := v_profile.regen_energy_at + (v_energy_ticks * interval '5 minutes');
   end if;
 
@@ -273,6 +292,10 @@ begin
         regen_energy_at = v_profile.regen_energy_at,
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
+        medical_cooldown_seconds = v_profile.medical_cooldown_seconds,
+        booster_cooldown_seconds = v_profile.booster_cooldown_seconds,
+        drug_cooldown_seconds = v_profile.drug_cooldown_seconds,
+        last_cooldown_processed_at = v_profile.last_cooldown_processed_at,
         morale_reset_checked_at = v_profile.morale_reset_checked_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,
@@ -339,6 +362,13 @@ begin
       'rareTech', v_profile.rare_tech
     ),
     'inventoryItems', v_inventory_items,
+    'cooldowns', jsonb_build_object(
+      'medicalSeconds', v_profile.medical_cooldown_seconds,
+      'medicalMaxSeconds', 21600,
+      'boosterSeconds', v_profile.booster_cooldown_seconds,
+      'boosterMaxSeconds', 86400,
+      'drugSeconds', v_profile.drug_cooldown_seconds
+    ),
     'crimeLog', coalesce(v_profile.crime_log, '[]'::jsonb),
     'isDev', coalesce(v_is_dev, false),
     'activeGym', v_profile.active_gym,
@@ -419,6 +449,10 @@ declare
   v_item_index integer;
   v_existing_qty integer;
   v_existing_item jsonb;
+  v_item_cooldown_type text := 'none';
+  v_item_cooldown_add_seconds integer := 0;
+  v_item_energy_boost integer := 0;
+  v_item_life_boost integer := 0;
   v_skill_gain integer := 0;
   v_fail_text text;
   v_common_items text[] := array[
@@ -954,31 +988,49 @@ begin
       if v_item_name = any(v_candy_common_items) then
         v_item_category := 'morale';
         v_item_morale_boost := 8 + floor(random() * 6);
+        v_item_cooldown_type := 'booster';
+        v_item_cooldown_add_seconds := 1800;
       elsif v_item_name = any(v_candy_mid_items) then
         v_item_category := 'morale';
         v_item_morale_boost := 15 + floor(random() * 10);
+        v_item_cooldown_type := 'booster';
+        v_item_cooldown_add_seconds := 1800;
       elsif v_item_name = any(v_candy_edgy_items) then
         v_item_category := 'morale';
         v_item_morale_boost := 22 + floor(random() * 14);
+        v_item_cooldown_type := 'booster';
+        v_item_cooldown_add_seconds := 1800;
       elsif v_item_name = any(v_candy_rare_items) then
         v_item_category := 'morale';
         if v_item_name = 'Outmine Entertainment Disk (OED)' then
           v_item_morale_boost := 80 + floor(random() * 40);
+          v_item_cooldown_type := 'booster';
+          v_item_cooldown_add_seconds := 21600;
         else
           v_item_morale_boost := 35 + floor(random() * 20);
+          v_item_cooldown_type := 'booster';
+          v_item_cooldown_add_seconds := 1800;
         end if;
       elsif v_item_rarity = 'Common' then
         v_item_category := 'misc';
         v_item_morale_boost := 0;
+        v_item_cooldown_type := 'none';
+        v_item_cooldown_add_seconds := 0;
       elsif v_item_rarity = 'Consumable' then
         v_item_category := 'temporary';
         v_item_morale_boost := 0;
+        v_item_cooldown_type := 'none';
+        v_item_cooldown_add_seconds := 0;
       elsif v_item_rarity = 'Uncommon' then
         v_item_category := 'special';
         v_item_morale_boost := 0;
+        v_item_cooldown_type := 'none';
+        v_item_cooldown_add_seconds := 0;
       else
         v_item_category := 'special';
         v_item_morale_boost := 0;
+        v_item_cooldown_type := 'none';
+        v_item_cooldown_add_seconds := 0;
       end if;
 
       if v_item_name <> 'Hidden Stash Cache' then
@@ -1003,6 +1055,10 @@ begin
               'category', v_item_category,
               'quantity', v_qty,
               'moraleBoost', v_item_morale_boost,
+              'energyBoost', 0,
+              'lifeBoost', 0,
+              'cooldownType', v_item_cooldown_type,
+              'cooldownAddSeconds', v_item_cooldown_add_seconds,
               'rarity', v_item_rarity,
               'description', v_item_desc
             )
@@ -1076,8 +1132,25 @@ begin
 
     v_item_category := coalesce(v_existing_item->>'category', 'misc');
     v_item_morale_boost := coalesce((v_existing_item->>'moraleBoost')::integer, 0);
-    if v_item_category <> 'morale' or v_item_morale_boost <= 0 then
+    v_item_energy_boost := coalesce((v_existing_item->>'energyBoost')::integer, 0);
+    v_item_life_boost := coalesce((v_existing_item->>'lifeBoost')::integer, 0);
+    v_item_cooldown_type := coalesce(v_existing_item->>'cooldownType', 'none');
+    v_item_cooldown_add_seconds := coalesce((v_existing_item->>'cooldownAddSeconds')::integer, 0);
+    if v_item_cooldown_type = 'none' and v_item_category = 'morale' then
+      v_item_cooldown_type := 'booster';
+      v_item_cooldown_add_seconds := case when v_item_name = 'Outmine Entertainment Disk (OED)' then 21600 else 1800 end;
+    end if;
+
+    if (v_item_morale_boost <= 0 and v_item_energy_boost <= 0 and v_item_life_boost <= 0) then
       raise exception 'This item cannot be used right now.';
+    end if;
+
+    if v_item_cooldown_type = 'medical' and v_profile.medical_cooldown_seconds > 21600 then
+      raise exception 'Medical cooldown is too high. Wait before using another med item.';
+    elsif v_item_cooldown_type = 'booster' and v_profile.booster_cooldown_seconds > 86400 then
+      raise exception 'Booster cooldown is too high. Wait before using another booster item.';
+    elsif v_item_cooldown_type = 'drug' and v_profile.drug_cooldown_seconds > 0 then
+      raise exception 'Drug cooldown active. You cannot use another stimulant yet.';
     end if;
 
     if v_item_name = 'Dreamdust Candy' and random() < 0.35 then
@@ -1092,7 +1165,23 @@ begin
       v_profile.life := greatest(0, v_profile.life - (1 + floor(random() * 3)));
     end if;
 
-    v_profile.happy := v_profile.happy + v_item_morale_boost;
+    if v_item_morale_boost > 0 then
+      v_profile.happy := v_profile.happy + v_item_morale_boost;
+    end if;
+    if v_item_energy_boost > 0 then
+      v_profile.energy := least(1000, v_profile.energy + v_item_energy_boost);
+    end if;
+    if v_item_life_boost > 0 then
+      v_profile.life := least(v_profile.max_life, v_profile.life + v_item_life_boost);
+    end if;
+
+    if v_item_cooldown_type = 'medical' then
+      v_profile.medical_cooldown_seconds := greatest(0, v_profile.medical_cooldown_seconds) + greatest(0, v_item_cooldown_add_seconds);
+    elsif v_item_cooldown_type = 'booster' then
+      v_profile.booster_cooldown_seconds := greatest(0, v_profile.booster_cooldown_seconds) + greatest(0, v_item_cooldown_add_seconds);
+    elsif v_item_cooldown_type = 'drug' then
+      v_profile.drug_cooldown_seconds := greatest(0, v_profile.drug_cooldown_seconds) + greatest(0, v_item_cooldown_add_seconds);
+    end if;
 
     if v_existing_qty = 1 then
       v_profile.inventory_items := (
@@ -1109,7 +1198,52 @@ begin
       );
     end if;
 
-    v_notice := format('Used %s (+%s Morale).', v_item_name, v_item_morale_boost);
+    v_notice := format(
+      'Used %s.%s%s%s',
+      v_item_name,
+      case when v_item_morale_boost > 0 then format(' +%s Morale.', v_item_morale_boost) else '' end,
+      case when v_item_energy_boost > 0 then format(' +%s Stamina.', v_item_energy_boost) else '' end,
+      case when v_item_life_boost > 0 then format(' +%s Life.', v_item_life_boost) else '' end
+    );
+
+  elsif p_action = 'dev_add_oed' then
+    if not coalesce(v_is_dev, false) then
+      raise exception 'Not allowed.';
+    end if;
+
+    v_item_name := 'Outmine Entertainment Disk (OED)';
+    select (j.idx - 1)::integer, j.value
+      into v_item_index, v_existing_item
+    from jsonb_array_elements(coalesce(v_profile.inventory_items, '[]'::jsonb)) with ordinality as j(value, idx)
+    where j.value->>'name' = v_item_name
+    limit 1;
+
+    if found then
+      v_existing_qty := coalesce((v_existing_item->>'quantity')::integer, 0);
+      v_profile.inventory_items := jsonb_set(
+        coalesce(v_profile.inventory_items, '[]'::jsonb),
+        array[v_item_index::text, 'quantity'],
+        to_jsonb(v_existing_qty + 1),
+        false
+      );
+    else
+      v_profile.inventory_items := coalesce(v_profile.inventory_items, '[]'::jsonb) || jsonb_build_array(
+        jsonb_build_object(
+          'name', v_item_name,
+          'category', 'morale',
+          'quantity', 1,
+          'moraleBoost', 100,
+          'energyBoost', 0,
+          'lifeBoost', 0,
+          'cooldownType', 'booster',
+          'cooldownAddSeconds', 21600,
+          'rarity', 'Rare',
+          'description', 'Salvaged pre-collapse media disk loaded with old world entertainment.'
+        )
+      );
+    end if;
+
+    v_notice := 'Added 1 Outmine Entertainment Disk (OED) to inventory.';
 
   elsif p_action = 'dev_restore_vital' then
     if not coalesce(v_is_dev, false) then
@@ -1127,13 +1261,13 @@ begin
       v_profile.life := least(v_profile.max_life, v_profile.life + v_amount);
       v_notice := format('Life restored by %s.', v_amount);
     elsif v_vital = 'stamina' then
-      v_profile.energy := least(v_profile.max_energy, v_profile.energy + v_amount);
+      v_profile.energy := least(1000, v_profile.energy + v_amount);
       v_notice := format('Stamina restored by %s.', v_amount);
     elsif v_vital = 'instinct' then
       v_profile.nerve := least(v_profile.max_nerve, v_profile.nerve + v_amount);
       v_notice := format('Instinct restored by %s.', v_amount);
     elsif v_vital = 'morale' then
-      v_profile.happy := least(v_profile.max_happy, v_profile.happy + v_amount);
+      v_profile.happy := v_profile.happy + v_amount;
       v_notice := format('Morale restored by %s.', v_amount);
     else
       raise exception 'Invalid vital.';
@@ -1180,6 +1314,10 @@ begin
         regen_energy_at = v_profile.regen_energy_at,
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
+        medical_cooldown_seconds = v_profile.medical_cooldown_seconds,
+        booster_cooldown_seconds = v_profile.booster_cooldown_seconds,
+        drug_cooldown_seconds = v_profile.drug_cooldown_seconds,
+        last_cooldown_processed_at = v_profile.last_cooldown_processed_at,
         morale_reset_checked_at = v_profile.morale_reset_checked_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,

@@ -47,8 +47,20 @@ interface InventoryItem {
   category: string;
   quantity: number;
   moraleBoost?: number;
+  energyBoost?: number;
+  lifeBoost?: number;
+  cooldownType?: 'none' | 'medical' | 'booster' | 'drug';
+  cooldownAddSeconds?: number;
   description?: string;
   rarity?: string;
+}
+
+interface CooldownState {
+  medicalSeconds: number;
+  medicalMaxSeconds: number;
+  boosterSeconds: number;
+  boosterMaxSeconds: number;
+  drugSeconds: number;
 }
 
 interface CrimeLogEntry {
@@ -66,6 +78,7 @@ interface VoxCityState {
   collegeClasses: number;
   inventory: InventoryState;
   inventoryItems: InventoryItem[];
+  cooldowns: CooldownState;
   crimeLog: CrimeLogEntry[];
   isDev: boolean;
   activeGym: string;
@@ -139,6 +152,7 @@ const defaultState: VoxCityState = {
   collegeClasses: 0,
   inventory: { scrap: 0, components: 0, rareTech: 0 },
   inventoryItems: [],
+  cooldowns: { medicalSeconds: 0, medicalMaxSeconds: 21600, boosterSeconds: 0, boosterMaxSeconds: 86400, drugSeconds: 0 },
   crimeLog: [],
   isDev: false,
   activeGym: 'scrap-yard-gym',
@@ -179,6 +193,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryCategory, setInventoryCategory] = useState('all');
   const [inventoryView, setInventoryView] = useState<'list' | 'grid'>('list');
+  const [selectedGridItemName, setSelectedGridItemName] = useState<string>('');
   const [moraleResetNow, setMoraleResetNow] = useState(Date.now());
   const [devRestore, setDevRestore] = useState({
     life: 10,
@@ -209,6 +224,26 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     ? Math.floor((nextMoraleResetMs - moraleResetNow) / 1000)
     : 0;
   const moraleResetTimer = `${Math.floor(moraleResetSeconds / 60)}:${String(moraleResetSeconds % 60).padStart(2, '0')}`;
+  const formatDuration = (seconds: number) => {
+    const clamped = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(clamped / 3600);
+    const m = Math.floor((clamped % 3600) / 60);
+    const s = clamped % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+  const canUseItem = (item: InventoryItem) => {
+    const cooldownType = item.cooldownType ?? (item.category === 'morale' ? 'booster' : 'none');
+    if (cooldownType === 'medical') {
+      return state.cooldowns.medicalSeconds <= state.cooldowns.medicalMaxSeconds;
+    }
+    if (cooldownType === 'booster') {
+      return state.cooldowns.boosterSeconds <= state.cooldowns.boosterMaxSeconds;
+    }
+    if (cooldownType === 'drug') {
+      return state.cooldowns.drugSeconds <= 0;
+    }
+    return Boolean((item.moraleBoost ?? 0) > 0 || (item.energyBoost ?? 0) > 0 || (item.lifeBoost ?? 0) > 0);
+  };
   const unlockedGymSet = useMemo(() => new Set(state.gyms.filter((g) => g.unlocked).map((g) => g.slug)), [state.gyms]);
   const canPurchaseGym = (slug: string) => {
     if (unlockedGymSet.has(slug)) return false;
@@ -599,7 +634,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
         { id: 'special', label: 'Special', icon: '◆' },
         { id: 'jewelry', label: 'Jewelry', icon: '◇' },
         { id: 'book', label: 'Books', icon: '▤' },
-        { id: 'morale', label: 'Morale', icon: '🍬' },
+        { id: 'morale', label: 'Morale', icon: 'M' },
         { id: 'misc', label: 'Misc', icon: '◌' },
       ];
 
@@ -655,6 +690,18 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               </div>
             </div>
 
+            <div className="grid grid-cols-3 gap-1 border-b border-[#2c3441] bg-[#141a23] px-2 py-1 text-[10px]">
+              <div className={`${state.cooldowns.medicalSeconds > state.cooldowns.medicalMaxSeconds ? 'text-rose-300' : 'text-[#9eb2ca]'}`}>
+                Medical Cooldown: {formatDuration(state.cooldowns.medicalSeconds)} / {formatDuration(state.cooldowns.medicalMaxSeconds)}
+              </div>
+              <div className={`${state.cooldowns.boosterSeconds > state.cooldowns.boosterMaxSeconds ? 'text-amber-300' : 'text-[#9eb2ca]'}`}>
+                Booster Cooldown: {formatDuration(state.cooldowns.boosterSeconds)} / {formatDuration(state.cooldowns.boosterMaxSeconds)}
+              </div>
+              <div className={`${state.cooldowns.drugSeconds > 0 ? 'text-violet-300' : 'text-[#9eb2ca]'}`}>
+                Drug Cooldown: {formatDuration(state.cooldowns.drugSeconds)}
+              </div>
+            </div>
+
             <div className="flex items-center justify-between border-b border-[#2c3441] px-2 py-1 text-xs">
               <span className="text-[#dbe4f0]">Your items - {inventoryCategory === 'all' ? 'All' : inventoryCategory}</span>
               <input
@@ -694,14 +741,45 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               {filteredInventoryItems.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-[#8ea1b8]">No items match this filter.</p>
               ) : inventoryView === 'grid' ? (
-                <div className="grid grid-cols-5 gap-1 p-2">
-                  {filteredInventoryItems.map((item) => (
-                    <div key={item.name} className="rounded border border-[#344053] bg-[#151d28] p-1 text-[10px]">
+                <div className="space-y-2 p-2">
+                  <div className="grid grid-cols-5 gap-1">
+                    {filteredInventoryItems.map((item) => (
+                      <button
+                        key={item.name}
+                        onClick={() => setSelectedGridItemName((prev) => (prev === item.name ? '' : item.name))}
+                        className={`rounded border p-1 text-left text-[10px] ${
+                          selectedGridItemName === item.name ? 'border-cyan-500 bg-[#1a2b3d]' : 'border-[#344053] bg-[#151d28]'
+                        }`}
+                      >
                       <div className="mb-1 h-9 rounded bg-[#0f1620]" />
                       <p className="truncate text-[#d9e3f0]">{item.name}</p>
                       <p className="text-[#8ea1b8]">x{item.quantity}</p>
-                    </div>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedGridItemName && (
+                    (() => {
+                      const selectedItem = filteredInventoryItems.find((item) => item.name === selectedGridItemName);
+                      if (!selectedItem) return null;
+                      return (
+                        <div className="rounded border border-[#3a4659] bg-[#111821] p-2 text-xs">
+                          <p className="font-semibold text-[#dbe5f3]">{selectedItem.name}</p>
+                          <p className="text-[11px] text-[#8ea2ba]">{selectedItem.description ?? 'No description.'}</p>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              disabled={busy || selectedItem.quantity <= 0 || !canUseItem(selectedItem)}
+                              onClick={() => void runAction('use_item', { itemName: selectedItem.name })}
+                              className="rounded border border-[#355069] px-2 py-1 text-[11px] text-[#a8dcff] disabled:opacity-40"
+                            >
+                              Use
+                            </button>
+                            <button className="rounded border border-[#4c4d43] px-2 py-1 text-[11px] text-[#c9c6a4]">Sell</button>
+                            <button className="rounded border border-[#43455a] px-2 py-1 text-[11px] text-[#a9b3cd]">Trade</button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               ) : (
                 filteredInventoryItems.map((item) => (
@@ -713,7 +791,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                     </div>
                     <span className="text-center text-[#6f8299]">✓</span>
                     <button
-                      disabled={busy || item.quantity <= 0 || (!item.moraleBoost && item.category !== 'morale')}
+                      disabled={busy || item.quantity <= 0 || !canUseItem(item)}
                       onClick={() => void runAction('use_item', { itemName: item.name })}
                       className="rounded border border-[#355069] px-1 py-0.5 text-[10px] text-[#a8dcff] disabled:opacity-40"
                     >
@@ -761,7 +839,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#1a1f27] text-[#d6dde8]">
+    <div className="min-h-screen bg-[#1a1f27] pb-20 text-[#d6dde8] md:pb-24">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         <aside className="hidden w-72 border-r border-[#2e3643] bg-[#11161d] p-4 lg:block">
           <div className="mb-4">
@@ -819,6 +897,13 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                       </button>
                     </div>
                   ))}
+                  <button
+                    disabled={busy}
+                    onClick={() => void runAction('dev_add_oed')}
+                    className="rounded border border-[#684e2b] bg-[#3d2d18] px-2 py-0.5 text-[11px] text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
+                  >
+                    +1 OED
+                  </button>
                 </div>
               )}
 
@@ -856,7 +941,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
             <p className="mt-2 text-xs text-[#8aa0ba]">{loading ? 'Loading city state...' : notice}</p>
           </header>
 
-          <div className="p-3 sm:p-5">{renderContent()}</div>
+          <div className="p-3 pb-24 sm:p-5 sm:pb-28">{renderContent()}</div>
         </main>
       </div>
     </div>

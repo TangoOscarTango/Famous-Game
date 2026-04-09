@@ -133,7 +133,7 @@ const AppContent: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="p-4 sm:p-6">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-28">
           {renderPage()}
         </main>
       </div>

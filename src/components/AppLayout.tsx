@@ -10,6 +10,7 @@ import ZeldaGame from '@/components/ZeldaGame';
 import Chat from '@/components/Chat';
 import WalletHub from '@/components/WalletHub';
 import VoxCity from '@/components/VoxCity';
+import ChatDock from '@/components/ChatDock';
 
 const AppContent: React.FC = () => {
   const { loading } = useAuth();
@@ -40,6 +41,7 @@ const AppContent: React.FC = () => {
           onBackToHub={() => setCurrentPage('dashboard')}
           onOpenAuth={() => setAuthModalOpen(true)}
         />
+        <ChatDock />
         <AuthModal
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
@@ -141,6 +143,7 @@ const AppContent: React.FC = () => {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
       />
+      <ChatDock />
     </div>
   );
 };

@@ -57,6 +57,22 @@ interface VoxCityState {
   inventory: InventoryState;
   crimeLog: CrimeLogEntry[];
   isDev: boolean;
+  activeGym: string;
+  gyms: Array<{
+    slug: string;
+    displayName: string;
+    sortOrder: number;
+    costFp: number;
+    energyPerTrain: 5 | 10 | 25 | 50;
+    dots: {
+      ferocity: number;
+      agility: number;
+      instinctCombat: number;
+      grit: number;
+    };
+    unlocked: boolean;
+    active: boolean;
+  }>;
   notice?: string;
 }
 
@@ -101,6 +117,8 @@ const defaultState: VoxCityState = {
   inventory: { scrap: 0, components: 0, rareTech: 0 },
   crimeLog: [],
   isDev: false,
+  activeGym: 'scrap-yard-gym',
+  gyms: [],
   notice: 'City systems online.',
 };
 
@@ -111,7 +129,6 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('City systems online.');
-  const [trainingEnergy, setTrainingEnergy] = useState<5 | 10 | 25 | 50>(5);
   const [trainingTrains, setTrainingTrains] = useState<number>(1);
 
   const zonesUnlocked = useMemo(
@@ -124,6 +141,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   );
 
   const deepDigUnlocked = state.scavengingSkill >= 25;
+  const activeGym = state.gyms.find((g) => g.slug === state.activeGym) ?? state.gyms.find((g) => g.active);
   const formatStat = (value: number) => Number(value || 0).toFixed(4);
 
   const loadState = async (silent = false) => {
@@ -247,22 +265,53 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
     if (section === 'training') {
       return (
-        <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+        <div className="space-y-4">
+          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+            <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Gym Progression</h2>
+            <div className="space-y-2">
+              {state.gyms.map((gym) => (
+                <div key={gym.slug} className="rounded border border-[#344257] bg-[#1a2432] p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-[#eef2f8]">{gym.displayName}</p>
+                      <p className="text-xs text-[#9aacc3]">
+                        {gym.energyPerTrain}E/train • Dots F {gym.dots.ferocity} A {gym.dots.agility} I {gym.dots.instinctCombat} G {gym.dots.grit}
+                      </p>
+                    </div>
+                    {gym.unlocked ? (
+                      gym.slug === state.activeGym ? (
+                        <span className="rounded border border-[#38576c] bg-[#1b3346] px-2 py-1 text-xs text-[#98d0ff]">Active</span>
+                      ) : (
+                        <button
+                          disabled={busy}
+                          onClick={() => void runAction('set_gym', { gymSlug: gym.slug })}
+                          className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60"
+                        >
+                          Activate
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() => void runAction('buy_gym', { gymSlug: gym.slug })}
+                        className="rounded border border-[#66553b] bg-[#33291c] px-2 py-1 text-xs text-[#f3d7aa] hover:bg-[#413222] disabled:opacity-60"
+                      >
+                        Unlock ({gym.costFp.toLocaleString()} FP)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
           <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Training Grounds</h2>
           <div className="mb-3 grid gap-2 sm:grid-cols-2">
-            <label className="text-xs text-[#9aacc3]">
-              Energy per train
-              <select
-                value={trainingEnergy}
-                onChange={(e) => setTrainingEnergy(Number(e.target.value) as 5 | 10 | 25 | 50)}
-                className="mt-1 w-full rounded border border-[#3c4a5d] bg-[#1a2432] px-2 py-1 text-sm text-[#e6eef9]"
-              >
-                <option value={5}>5E</option>
-                <option value={10}>10E</option>
-                <option value={25}>25E</option>
-                <option value={50}>50E</option>
-              </select>
-            </label>
+            <div className="rounded border border-[#344257] bg-[#1a2432] px-2 py-2 text-xs text-[#c6d5e8]">
+              Active Gym: <span className="font-semibold text-[#eef2f8]">{activeGym?.displayName ?? 'None'}</span>
+              <div className="text-[#90a2bb]">{activeGym?.energyPerTrain ?? 5} Energy per train</div>
+            </div>
             <label className="text-xs text-[#9aacc3]">
               Train count
               <input
@@ -276,11 +325,12 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
             </label>
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.ferocity)} Train</button></div>
-            <div className="flex items-center justify-between"><span>Agility (Speed)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.agility)} Train</button></div>
-            <div className="flex items-center justify-between"><span>Instinct (Dexterity)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.instinctCombat)} Train</button></div>
-            <div className="flex items-center justify-between"><span>Grit (Defense)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.grit)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.ferocity)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Agility (Speed)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.agility)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Instinct (Dexterity)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.instinctCombat)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Grit (Defense)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.grit)} Train</button></div>
           </div>
+        </div>
         </div>
       );
     }

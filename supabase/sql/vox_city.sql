@@ -15,6 +15,7 @@ create table if not exists public.vox_city_profiles (
   gym_agility double precision not null default 1,
   gym_instinct_combat double precision not null default 1,
   gym_grit double precision not null default 1,
+  active_gym text not null default 'scrap-yard-gym',
   energy integer not null default 100,
   max_energy integer not null default 100,
   nerve integer not null default 10,
@@ -36,6 +37,65 @@ create table if not exists public.vox_city_profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.vox_city_gyms (
+  slug text primary key,
+  display_name text not null,
+  sort_order integer not null unique,
+  fp_cost bigint not null default 0 check (fp_cost >= 0),
+  energy_per_train integer not null check (energy_per_train in (5, 10, 25, 50)),
+  dot_ferocity double precision not null,
+  dot_agility double precision not null,
+  dot_instinct_combat double precision not null,
+  dot_grit double precision not null
+);
+
+create table if not exists public.vox_city_gym_unlocks (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  gym_slug text not null references public.vox_city_gyms(slug) on delete cascade,
+  unlocked_at timestamptz not null default now(),
+  primary key (user_id, gym_slug)
+);
+
+insert into public.vox_city_gyms (
+  slug, display_name, sort_order, fp_cost, energy_per_train,
+  dot_ferocity, dot_agility, dot_instinct_combat, dot_grit
+)
+values
+  ('scrap-yard-gym', 'Scrap Yard Gym', 1, 0, 5, 1.2, 1.2, 1.2, 1.2),
+  ('rustfang-fitness', 'Rustfang Fitness', 2, 250, 5, 1.5, 1.5, 1.5, 1.5),
+  ('iron-den', 'Iron Den', 3, 1200, 10, 2.0, 2.0, 2.0, 2.0),
+  ('pack-training-grounds', 'Pack Training Grounds', 4, 3500, 10, 2.5, 2.5, 2.5, 2.5),
+  ('warclaw-conditioning-center', 'Warclaw Conditioning Center', 5, 8500, 25, 4.6, 4.6, 4.6, 4.6),
+  ('vixenvox-athletic-complex', 'Vixenvox Athletic Complex', 6, 18000, 25, 5.7, 5.7, 5.7, 5.7),
+  ('apex-predator-facility', 'Apex Predator Facility', 7, 42000, 25, 7.8, 7.8, 7.8, 7.8),
+  ('fangforge', 'Fangforge', 8, 80000, 50, 9.5, 7.2, 7.2, 7.2),
+  ('ghoststep-arena', 'Ghoststep Arena', 9, 80000, 50, 7.2, 9.5, 7.2, 7.2),
+  ('shadow-reflex-lab', 'Shadow Reflex Lab', 10, 80000, 50, 7.2, 7.2, 9.5, 7.2),
+  ('ironhide-bastion', 'Ironhide Bastion', 11, 80000, 50, 7.2, 7.2, 7.2, 9.5)
+on conflict (slug) do update
+set display_name = excluded.display_name,
+    sort_order = excluded.sort_order,
+    fp_cost = excluded.fp_cost,
+    energy_per_train = excluded.energy_per_train,
+    dot_ferocity = excluded.dot_ferocity,
+    dot_agility = excluded.dot_agility,
+    dot_instinct_combat = excluded.dot_instinct_combat,
+    dot_grit = excluded.dot_grit;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vox_city_profiles_active_gym_fkey'
+  ) then
+    alter table public.vox_city_profiles
+      add constraint vox_city_profiles_active_gym_fkey
+      foreign key (active_gym) references public.vox_city_gyms(slug);
+  end if;
+end
+$$;
+
 alter table public.vox_city_profiles
   alter column ferocity type double precision using ferocity::double precision,
   alter column agility type double precision using agility::double precision,
@@ -50,13 +110,19 @@ alter table public.vox_city_profiles
   add column if not exists gym_ferocity double precision not null default 1,
   add column if not exists gym_agility double precision not null default 1,
   add column if not exists gym_instinct_combat double precision not null default 1,
-  add column if not exists gym_grit double precision not null default 1;
+  add column if not exists gym_grit double precision not null default 1,
+  add column if not exists active_gym text not null default 'scrap-yard-gym';
 
 alter table public.vox_city_profiles enable row level security;
+alter table public.vox_city_gym_unlocks enable row level security;
+alter table public.vox_city_gyms enable row level security;
 
 drop policy if exists "vox_city_owner_select" on public.vox_city_profiles;
 drop policy if exists "vox_city_owner_update" on public.vox_city_profiles;
 drop policy if exists "vox_city_owner_insert" on public.vox_city_profiles;
+drop policy if exists "vox_city_gyms_read" on public.vox_city_gyms;
+drop policy if exists "vox_city_unlocks_owner_select" on public.vox_city_gym_unlocks;
+drop policy if exists "vox_city_unlocks_no_client_write" on public.vox_city_gym_unlocks;
 
 create policy "vox_city_owner_select"
 on public.vox_city_profiles
@@ -74,6 +140,22 @@ on public.vox_city_profiles
 for insert
 with check (auth.uid() = user_id);
 
+create policy "vox_city_gyms_read"
+on public.vox_city_gyms
+for select
+using (true);
+
+create policy "vox_city_unlocks_owner_select"
+on public.vox_city_gym_unlocks
+for select
+using (auth.uid() = user_id);
+
+create policy "vox_city_unlocks_no_client_write"
+on public.vox_city_gym_unlocks
+for all
+using (false)
+with check (false);
+
 create or replace function public.vox_city_get_state(
   p_user_id uuid
 )
@@ -90,6 +172,7 @@ declare
   v_life_ticks integer;
   v_life_gain integer;
   v_is_dev boolean := false;
+  v_gyms jsonb := '[]'::jsonb;
   v_profile public.vox_city_profiles%rowtype;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
@@ -114,6 +197,17 @@ begin
 
   if not found then
     raise exception 'Failed to load profile';
+  end if;
+
+  insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+  values (p_user_id, 'scrap-yard-gym')
+  on conflict (user_id, gym_slug) do nothing;
+
+  if not exists (
+    select 1 from public.vox_city_gym_unlocks
+    where user_id = p_user_id and gym_slug = v_profile.active_gym
+  ) then
+    v_profile.active_gym := 'scrap-yard-gym';
   end if;
 
   v_energy_ticks := floor(extract(epoch from (v_now - v_profile.regen_energy_at)) / 300);
@@ -150,13 +244,60 @@ begin
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
         regen_life_at = v_profile.regen_life_at,
+        active_gym = v_profile.active_gym,
         updated_at = now()
   where user_id = p_user_id;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'slug', g.slug,
+        'displayName', g.display_name,
+        'sortOrder', g.sort_order,
+        'costFp', g.fp_cost,
+        'energyPerTrain', g.energy_per_train,
+        'dots', jsonb_build_object(
+          'ferocity', g.dot_ferocity,
+          'agility', g.dot_agility,
+          'instinctCombat', g.dot_instinct_combat,
+          'grit', g.dot_grit
+        ),
+        'unlocked', (u.gym_slug is not null),
+        'active', (g.slug = v_profile.active_gym)
+      )
+      order by g.sort_order
+    ),
+    '[]'::jsonb
+  )
+    into v_gyms
+  from public.vox_city_gyms g
+  left join public.vox_city_gym_unlocks u
+    on u.gym_slug = g.slug
+   and u.user_id = p_user_id;
 
   select (up.user_type = 'dev')
     into v_is_dev
   from public.user_profiles up
   where up.user_id = p_user_id;
+
+  select g.*
+    into v_gym
+  from public.vox_city_gyms g
+  join public.vox_city_gym_unlocks u
+    on u.gym_slug = g.slug
+   and u.user_id = p_user_id
+  where g.slug = v_profile.active_gym;
+
+  if not found then
+    select g.*
+      into v_gym
+    from public.vox_city_gyms g
+    where g.slug = 'scrap-yard-gym';
+    v_profile.active_gym := 'scrap-yard-gym';
+    insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+    values (p_user_id, 'scrap-yard-gym')
+    on conflict (user_id, gym_slug) do nothing;
+  end if;
 
   return jsonb_build_object(
     'battle', jsonb_build_object(
@@ -183,7 +324,9 @@ begin
       'rareTech', v_profile.rare_tech
     ),
     'crimeLog', coalesce(v_profile.crime_log, '[]'::jsonb),
-    'isDev', coalesce(v_is_dev, false)
+    'isDev', coalesce(v_is_dev, false),
+    'activeGym', v_profile.active_gym,
+    'gyms', v_gyms
   );
 end;
 $$;
@@ -203,6 +346,7 @@ declare
   v_profile public.vox_city_profiles%rowtype;
   v_notice text := '';
   v_is_dev boolean := false;
+  v_gym public.vox_city_gyms%rowtype;
   v_stat text;
   v_approach text;
   v_gain integer;
@@ -241,6 +385,10 @@ declare
   v_scrap integer;
   v_components integer;
   v_entry jsonb;
+  v_target_gym text;
+  v_target_order integer;
+  v_required_prev_slug text;
+  v_wallet_balance bigint;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'Unauthorized';
@@ -267,33 +415,29 @@ begin
     v_stat := lower(coalesce(p_payload ->> 'stat', ''));
     v_train_count := coalesce((p_payload ->> 'trains')::integer, 1);
     v_train_count := greatest(1, least(v_train_count, 100));
-    v_energy_per_train := coalesce((p_payload ->> 'energy')::integer, 5);
+    v_energy_per_train := v_gym.energy_per_train;
     v_perks := coalesce(p_payload -> 'perks', '[]'::jsonb);
-
-    if v_energy_per_train not in (5, 10, 25, 50) then
-      raise exception 'Energy per train must be one of 5, 10, 25, 50.';
-    end if;
 
     if v_stat = 'ferocity' then
       v_const_a := 1600;
       v_const_b := 1700;
       v_const_c := 700;
-      v_gym_dots := v_profile.gym_ferocity;
+      v_gym_dots := v_gym.dot_ferocity;
     elsif v_stat = 'agility' then
       v_const_a := 1600;
       v_const_b := 2000;
       v_const_c := 1350;
-      v_gym_dots := v_profile.gym_agility;
+      v_gym_dots := v_gym.dot_agility;
     elsif v_stat = 'instinctcombat' then
       v_const_a := 1800;
       v_const_b := 1500;
       v_const_c := 1000;
-      v_gym_dots := v_profile.gym_instinct_combat;
+      v_gym_dots := v_gym.dot_instinct_combat;
     elsif v_stat = 'grit' then
       v_const_a := 2100;
       v_const_b := -600;
       v_const_c := 1500;
-      v_gym_dots := v_profile.gym_grit;
+      v_gym_dots := v_gym.dot_grit;
     else
       raise exception 'Invalid training stat.';
     end if;
@@ -360,6 +504,130 @@ begin
     end if;
 
     v_notice := format('Training complete: %s train(s), +%s total gain.', v_trains_done, round(v_total_gain::numeric, 4));
+
+  elsif p_action = 'buy_gym' then
+    v_target_gym := lower(coalesce(p_payload ->> 'gymSlug', ''));
+    if v_target_gym = '' then
+      raise exception 'Missing gym slug.';
+    end if;
+
+    if exists (
+      select 1
+      from public.vox_city_gym_unlocks
+      where user_id = p_user_id
+        and gym_slug = v_target_gym
+    ) then
+      raise exception 'Gym already unlocked.';
+    end if;
+
+    select sort_order
+      into v_target_order
+    from public.vox_city_gyms
+    where slug = v_target_gym;
+
+    if v_target_order is null then
+      raise exception 'Invalid gym.';
+    end if;
+
+    if v_target_order > 1 then
+      select slug
+        into v_required_prev_slug
+      from public.vox_city_gyms
+      where sort_order = v_target_order - 1;
+
+      if not exists (
+        select 1
+        from public.vox_city_gym_unlocks
+        where user_id = p_user_id
+          and gym_slug = v_required_prev_slug
+      ) then
+        raise exception 'Previous gym must be unlocked first.';
+      end if;
+    end if;
+
+    if v_target_order >= 8 and v_profile.active_gym <> 'apex-predator-facility' and not exists (
+      select 1
+      from public.vox_city_gym_unlocks
+      where user_id = p_user_id
+        and gym_slug = 'apex-predator-facility'
+    ) then
+      raise exception 'Apex Predator Facility must be unlocked first.';
+    end if;
+
+    if v_target_gym = 'fangforge' and v_profile.ferocity < 500 then
+      raise exception 'Need 500 Ferocity to unlock this specialist gym.';
+    elsif v_target_gym = 'ghoststep-arena' and v_profile.agility < 500 then
+      raise exception 'Need 500 Agility to unlock this specialist gym.';
+    elsif v_target_gym = 'shadow-reflex-lab' and v_profile.instinct_combat < 500 then
+      raise exception 'Need 500 Instinct to unlock this specialist gym.';
+    elsif v_target_gym = 'ironhide-bastion' and v_profile.grit < 500 then
+      raise exception 'Need 500 Grit to unlock this specialist gym.';
+    end if;
+
+    select balance_sats
+      into v_wallet_balance
+    from public.wallet_profiles
+    where user_id = p_user_id
+    for update;
+
+    if v_wallet_balance is null then
+      v_wallet_balance := 0;
+      insert into public.wallet_profiles (user_id, balance_sats, updated_at)
+      values (p_user_id, 0, now())
+      on conflict (user_id) do nothing;
+    end if;
+
+    select fp_cost
+      into v_gain
+    from public.vox_city_gyms
+    where slug = v_target_gym;
+
+    if v_wallet_balance < v_gain then
+      raise exception 'Not enough FP to unlock this gym.';
+    end if;
+
+    update public.wallet_profiles
+      set balance_sats = balance_sats - v_gain,
+          updated_at = now()
+    where user_id = p_user_id;
+
+    insert into public.wallet_ledger (
+      id, user_id, direction, amount_sats, source, note, status, created_at
+    )
+    values (
+      gen_random_uuid(),
+      p_user_id,
+      'debit',
+      v_gain,
+      'game_action',
+      'Gym unlock purchase',
+      'confirmed',
+      now()
+    );
+
+    insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+    values (p_user_id, v_target_gym);
+
+    v_profile.active_gym := v_target_gym;
+    v_notice := 'Gym unlocked and activated.';
+
+  elsif p_action = 'set_gym' then
+    v_target_gym := lower(coalesce(p_payload ->> 'gymSlug', ''));
+    if v_target_gym = '' then
+      raise exception 'Missing gym slug.';
+    end if;
+
+    if not exists (
+      select 1
+      from public.vox_city_gym_unlocks
+      where user_id = p_user_id
+        and gym_slug = v_target_gym
+    ) then
+      raise exception 'Gym is not unlocked.';
+    end if;
+
+    v_profile.active_gym := v_target_gym;
+    v_notice := 'Active gym changed.';
 
   elsif p_action = 'class' then
     if v_profile.energy < 8 or v_profile.happy < 5 then
@@ -519,6 +787,7 @@ begin
         regen_nerve_at = v_profile.regen_nerve_at,
         regen_happy_at = v_profile.regen_happy_at,
         regen_life_at = v_profile.regen_life_at,
+        active_gym = v_profile.active_gym,
         updated_at = now()
   where user_id = p_user_id;
 

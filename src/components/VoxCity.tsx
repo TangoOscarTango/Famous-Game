@@ -538,7 +538,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                     ['Instinct', selectedGym.dots.instinctCombat],
                     ['Grit', selectedGym.dots.grit],
                   ] as Array<[string, number]>).map(([label, dots]) => (
-                    <div key={label}>
+                    <div key={label} title={`${Number(dots).toFixed(1)} ${label}`}>
                       <div className="mb-1 flex justify-between"><span>{label}</span></div>
                       {renderDotPills(dots)}
                     </div>
@@ -667,3 +667,4 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 };
 
 export default VoxCity;
+

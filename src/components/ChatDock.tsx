@@ -375,6 +375,13 @@ const ChatDock: React.FC = () => {
             )}
 
             <div className="border-t border-gray-700 px-3 py-2">
+              <div className="relative h-0">
+                {showEnterHint && isCooldownActive && (
+                  <span className="hint-rise pointer-events-none absolute bottom-1 left-2 z-20 text-[11px] text-amber-300">
+                    press enter twice to pay to send...
+                  </span>
+                )}
+              </div>
               <div className="flex gap-2">
                 <div className="relative flex-1 overflow-hidden rounded border border-gray-700 bg-gray-950">
                   <div
@@ -419,11 +426,6 @@ const ChatDock: React.FC = () => {
                     placeholder={`Message #${activeChannel}`}
                     className="relative z-10 w-full bg-transparent px-2 py-1 text-sm text-gray-100 outline-none focus:border-cyan-600"
                   />
-                  {showEnterHint && isCooldownActive && (
-                    <span className="hint-rise pointer-events-none absolute bottom-full left-2 mb-1 text-[11px] text-amber-300">
-                      press enter twice to pay to send...
-                    </span>
-                  )}
                 </div>
                 <button
                   onClick={() => void sendMessage()}

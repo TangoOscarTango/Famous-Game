@@ -244,7 +244,8 @@ $$;
 create or replace function public.chat_send_message(
   p_user_id uuid,
   p_channel_slug text,
-  p_body text
+  p_body text,
+  p_pay_bypass_cooldown boolean default false
 )
 returns jsonb
 language plpgsql
@@ -258,6 +259,7 @@ declare
   v_recent_count integer;
   v_last_message_at timestamptz;
   v_inserted public.chat_messages%rowtype;
+  v_wallet_balance bigint;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'Unauthorized';
@@ -291,7 +293,38 @@ begin
 
   if v_last_message_at is not null
     and v_last_message_at > now() - (v_channel.cooldown_seconds || ' seconds')::interval then
-    raise exception 'You are sending messages too quickly.';
+    if not p_pay_bypass_cooldown then
+      raise exception 'Cooldown active. Pay 1 FP to post now.';
+    end if;
+
+    select balance_sats
+      into v_wallet_balance
+    from public.wallet_profiles
+    where user_id = p_user_id
+    for update;
+
+    if coalesce(v_wallet_balance, 0) < 1 then
+      raise exception 'Not enough FP for cooldown bypass.';
+    end if;
+
+    update public.wallet_profiles
+      set balance_sats = balance_sats - 1,
+          updated_at = now()
+    where user_id = p_user_id;
+
+    insert into public.wallet_ledger (
+      id, user_id, direction, amount_sats, source, note, status, created_at
+    )
+    values (
+      gen_random_uuid(),
+      p_user_id,
+      'debit',
+      1,
+      'chat_cooldown_fee',
+      format('Cooldown bypass fee (%s)', v_channel.slug),
+      'confirmed',
+      now()
+    );
   end if;
 
   select count(*)
@@ -338,7 +371,7 @@ grant select, insert, update on public.chat_user_state to authenticated;
 
 grant execute on function public.chat_get_state(uuid) to authenticated;
 grant execute on function public.chat_save_state(uuid, text[], text, text[], boolean) to authenticated;
-grant execute on function public.chat_send_message(uuid, text, text) to authenticated;
+grant execute on function public.chat_send_message(uuid, text, text, boolean) to authenticated;
 
 do $$
 begin

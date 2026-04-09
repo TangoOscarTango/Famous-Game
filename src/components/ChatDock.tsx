@@ -43,6 +43,7 @@ const ChatDock: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [statusText, setStatusText] = useState<string>('');
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [canPayBypass, setCanPayBypass] = useState(false);
   const messagePaneRef = useRef<HTMLDivElement>(null);
 
   const sortedEnabledChannels = useMemo(
@@ -157,7 +158,7 @@ const ChatDock: React.FC = () => {
     });
   }, [activeChannel, collapsed]);
 
-  const sendMessage = async () => {
+  const sendMessage = async (payBypass = false) => {
     if (!user || sending) return;
     const text = input.trim();
     if (!text) return;
@@ -168,15 +169,19 @@ const ChatDock: React.FC = () => {
       p_user_id: user.id,
       p_channel_slug: activeChannel,
       p_body: text,
+      p_pay_bypass_cooldown: payBypass,
     });
 
     if (error) {
-      setStatusText(error.message || 'Send failed.');
+      const msg = error.message || 'Send failed.';
+      setStatusText(msg);
+      setCanPayBypass(msg.toLowerCase().includes('cooldown active'));
       setSending(false);
       return;
     }
 
     setInput('');
+    setCanPayBypass(false);
     setSending(false);
   };
 
@@ -308,6 +313,15 @@ const ChatDock: React.FC = () => {
                 >
                   Send
                 </button>
+                {canPayBypass && (
+                  <button
+                    onClick={() => void sendMessage(true)}
+                    disabled={sending || !input.trim()}
+                    className="rounded bg-amber-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+                  >
+                    Post now (1 FP)
+                  </button>
+                )}
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500">
                 <span>{input.trim().length}/280</span>

@@ -173,7 +173,8 @@ begin
       jsonb_build_object(
         'slug', c.slug,
         'displayName', c.display_name,
-        'sortOrder', c.sort_order
+        'sortOrder', c.sort_order,
+        'cooldownSeconds', c.cooldown_seconds
       )
       order by c.sort_order
     ),
@@ -258,6 +259,7 @@ declare
   v_normalized text;
   v_recent_count integer;
   v_last_message_at timestamptz;
+  v_cooldown_remaining_seconds integer;
   v_inserted public.chat_messages%rowtype;
   v_wallet_balance bigint;
 begin
@@ -294,7 +296,12 @@ begin
   if v_last_message_at is not null
     and v_last_message_at > now() - (v_channel.cooldown_seconds || ' seconds')::interval then
     if not p_pay_bypass_cooldown then
-      raise exception 'Cooldown active. Pay 1 FP to post now.';
+      v_cooldown_remaining_seconds :=
+        greatest(
+          1,
+          ceil(extract(epoch from ((v_last_message_at + (v_channel.cooldown_seconds || ' seconds')::interval) - now())))
+        )::integer;
+      raise exception 'Cooldown active: %s seconds remaining. Pay 1 FP to post now.', v_cooldown_remaining_seconds;
     end if;
 
     select balance_sats

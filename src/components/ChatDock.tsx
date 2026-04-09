@@ -6,6 +6,7 @@ interface ChannelInfo {
   slug: string;
   displayName: string;
   sortOrder: number;
+  cooldownSeconds: number;
 }
 
 interface ChatMessage {
@@ -44,7 +45,11 @@ const ChatDock: React.FC = () => {
   const [statusText, setStatusText] = useState<string>('');
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [canPayBypass, setCanPayBypass] = useState(false);
+  const [cooldownUntilByChannel, setCooldownUntilByChannel] = useState<Record<string, number>>({});
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [showConfetti, setShowConfetti] = useState(false);
   const messagePaneRef = useRef<HTMLDivElement>(null);
+  const previousActiveCooldownRef = useRef<number>(0);
 
   const sortedEnabledChannels = useMemo(
     () =>
@@ -64,6 +69,11 @@ const ChatDock: React.FC = () => {
       p_dock_collapsed: next.dockCollapsed ?? collapsed,
     });
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const fetchHistory = async (slug: string) => {
     const { data } = await supabase
@@ -175,13 +185,29 @@ const ChatDock: React.FC = () => {
     if (error) {
       const msg = error.message || 'Send failed.';
       setStatusText(msg);
+      const cooldownMatch = msg.match(/(\d+)\s*seconds?\s*remaining/i);
+      if (cooldownMatch) {
+        const secs = Number(cooldownMatch[1]);
+        if (Number.isFinite(secs) && secs > 0) {
+          setCooldownUntilByChannel((prev) => ({
+            ...prev,
+            [activeChannel]: Date.now() + secs * 1000,
+          }));
+        }
+      }
       setCanPayBypass(msg.toLowerCase().includes('cooldown active'));
       setSending(false);
       return;
     }
 
+    const channelCfg = channels.find((c) => c.slug === activeChannel);
+    const cooldownSeconds = channelCfg?.cooldownSeconds ?? 10;
+    setCooldownUntilByChannel((prev) => ({
+      ...prev,
+      [activeChannel]: Date.now() + cooldownSeconds * 1000,
+    }));
+
     setInput('');
-    setCanPayBypass(false);
     setSending(false);
   };
 
@@ -202,9 +228,38 @@ const ChatDock: React.FC = () => {
     await saveState({ dockCollapsed: next });
   };
 
-  if (!user) return null;
-
   const activeMessages = messagesByChannel[activeChannel] ?? [];
+  const channelCfg = channels.find((c) => c.slug === activeChannel);
+  const activeCooldownSeconds = channelCfg?.cooldownSeconds ?? 10;
+  const activeCooldownUntil = cooldownUntilByChannel[activeChannel] ?? 0;
+  const activeCooldownRemainingMs = Math.max(0, activeCooldownUntil - nowMs);
+  const activeCooldownPct = Math.max(
+    0,
+    Math.min(100, (activeCooldownRemainingMs / (activeCooldownSeconds * 1000)) * 100),
+  );
+
+  useEffect(() => {
+    const prev = previousActiveCooldownRef.current;
+    if (prev > 0 && activeCooldownRemainingMs <= 0) {
+      setShowConfetti(true);
+      const t = window.setTimeout(() => setShowConfetti(false), 900);
+      return () => window.clearTimeout(t);
+    }
+    previousActiveCooldownRef.current = activeCooldownRemainingMs;
+  }, [activeCooldownRemainingMs]);
+
+  useEffect(() => {
+    if (activeCooldownRemainingMs <= 0) {
+      setCanPayBypass(false);
+      if (statusText.toLowerCase().includes('cooldown active')) {
+        setStatusText('');
+      }
+    } else {
+      setCanPayBypass(true);
+    }
+  }, [activeCooldownRemainingMs, statusText]);
+
+  if (!user) return null;
 
   return (
     <div className="fixed bottom-3 right-3 z-50 hidden md:block">
@@ -293,19 +348,25 @@ const ChatDock: React.FC = () => {
 
             <div className="border-t border-gray-700 px-3 py-2">
               <div className="flex gap-2">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  maxLength={280}
-                  placeholder={`Message #${activeChannel}`}
-                  className="flex-1 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm text-gray-100 outline-none focus:border-cyan-600"
-                />
+                <div className="relative flex-1 overflow-hidden rounded border border-gray-700 bg-gray-950">
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 bg-red-700/70 transition-all duration-1000 ease-linear"
+                    style={{ width: `${activeCooldownPct}%` }}
+                  />
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendMessage();
+                      }
+                    }}
+                    maxLength={280}
+                    placeholder={`Message #${activeChannel}`}
+                    className="relative z-10 w-full bg-transparent px-2 py-1 text-sm text-gray-100 outline-none focus:border-cyan-600"
+                  />
+                </div>
                 <button
                   onClick={() => void sendMessage()}
                   disabled={sending || !input.trim()}
@@ -313,7 +374,7 @@ const ChatDock: React.FC = () => {
                 >
                   Send
                 </button>
-                {canPayBypass && (
+                {canPayBypass && activeCooldownRemainingMs > 0 && (
                   <button
                     onClick={() => void sendMessage(true)}
                     disabled={sending || !input.trim()}
@@ -323,6 +384,23 @@ const ChatDock: React.FC = () => {
                   </button>
                 )}
               </div>
+              {showConfetti && (
+                <div className="pointer-events-none relative mt-1 h-4">
+                  {Array.from({ length: 18 }).map((_, idx) => (
+                    <span
+                      key={idx}
+                      className="absolute top-0 h-1.5 w-1.5 rounded-sm"
+                      style={{
+                        left: `${4 + ((idx * 5) % 92)}%`,
+                        backgroundColor: ['#f87171', '#facc15', '#34d399', '#60a5fa', '#c084fc'][idx % 5],
+                        transform: `translateY(${(idx % 3) * 2}px)`,
+                        animation: `fadeOutUp 900ms ease-out forwards`,
+                        animationDelay: `${(idx % 6) * 20}ms`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
               <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500">
                 <span>{input.trim().length}/280</span>
                 <span>{statusText}</span>
@@ -331,6 +409,12 @@ const ChatDock: React.FC = () => {
           </>
         )}
       </div>
+      <style>{`
+        @keyframes fadeOutUp {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-14px) scale(0.7); }
+        }
+      `}</style>
     </div>
   );
 };

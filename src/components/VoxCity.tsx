@@ -115,6 +115,7 @@ interface VoxCityState {
   resources: ResourceStats;
   scavengingSkill: number;
   collegeClasses: number;
+  totalGymEnergySpent: number;
   inventory: InventoryState;
   inventoryItems: InventoryItem[];
   cooldowns: CooldownState;
@@ -129,8 +130,10 @@ interface VoxCityState {
     slug: string;
     displayName: string;
     sortOrder: number;
+    tier: GymTier;
     costFp: number;
     energyPerTrain: 5 | 10 | 25 | 50;
+    energyRequired: number;
     dots: {
       ferocity: number;
       agility: number;
@@ -153,9 +156,26 @@ const GENERAL_GYM_CHAIN = [
   'scrap-yard-gym',
   'rustfang-fitness',
   'iron-den',
-  'pack-training-grounds',
-  'warclaw-conditioning-center',
-  'vixenvox-athletic-complex',
+  'shoreline-brawlers',
+  'silverfang-gym',
+  'vixen-form-studio',
+  'denmasters-pit',
+  'vox-central-gym',
+  'bonebreaker-yard',
+  'pioneer-den',
+  'anomaly-forge',
+  'core-facility',
+  'razortrack-fitness',
+  'pulse-cardio-hub',
+  'lowerbody-forge',
+  'deep-burn-complex',
+  'apollo-den',
+  'iron-armory',
+  'force-conditioning',
+  'cha-den-arena',
+  'atlas-stronghold',
+  'last-round-pit',
+  'the-edge-arena',
   'apex-predator-facility',
 ] as const;
 const SPECIALIST_GYMS = ['fangforge', 'ghoststep-arena', 'shadow-reflex-lab', 'ironhide-bastion'] as const;
@@ -193,6 +213,7 @@ const defaultState: VoxCityState = {
   resources: { energy: 100, maxEnergy: 100, nerve: 10, maxNerve: 10, happy: 100, maxHappy: 100, life: 100, maxLife: 100, nextMoraleResetAt: null },
   scavengingSkill: 1,
   collegeClasses: 0,
+  totalGymEnergySpent: 0,
   inventory: { scrap: 0, components: 0, rareTech: 0 },
   inventoryItems: [],
   cooldowns: { medicalSeconds: 0, medicalMaxSeconds: 21600, boosterSeconds: 0, boosterMaxSeconds: 86400, drugSeconds: 0 },
@@ -212,20 +233,6 @@ const gymTierLabels: Record<GymTier, string> = {
   medium: 'Medium',
   heavyweight: 'Heavyweight',
   special: 'Special',
-};
-
-const gymTierBySlug: Record<string, GymTier> = {
-  'scrap-yard-gym': 'lightweight',
-  'rustfang-fitness': 'lightweight',
-  'iron-den': 'lightweight',
-  'pack-training-grounds': 'lightweight',
-  'warclaw-conditioning-center': 'medium',
-  'vixenvox-athletic-complex': 'medium',
-  'apex-predator-facility': 'heavyweight',
-  'fangforge': 'special',
-  'ghoststep-arena': 'special',
-  'shadow-reflex-lab': 'special',
-  'ironhide-bastion': 'special',
 };
 
 const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
@@ -300,12 +307,15 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const unlockedGymSet = useMemo(() => new Set(state.gyms.filter((g) => g.unlocked).map((g) => g.slug)), [state.gyms]);
   const canPurchaseGym = (slug: string) => {
     if (unlockedGymSet.has(slug)) return false;
+    const gym = state.gyms.find((g) => g.slug === slug);
+    if (!gym) return false;
     if ((SPECIALIST_GYMS as readonly string[]).includes(slug)) {
       return unlockedGymSet.has('apex-predator-facility');
     }
     const idx = GENERAL_GYM_CHAIN.findIndex((gymSlug) => gymSlug === slug);
-    if (idx <= 0) return true;
-    return unlockedGymSet.has(GENERAL_GYM_CHAIN[idx - 1]);
+    if (idx < 0) return false;
+    if (idx === 0) return state.totalGymEnergySpent >= gym.energyRequired;
+    return unlockedGymSet.has(GENERAL_GYM_CHAIN[idx - 1]) && state.totalGymEnergySpent >= gym.energyRequired;
   };
   const getLockedGymHint = (slug: string) => {
     if ((SPECIALIST_GYMS as readonly string[]).includes(slug) && !unlockedGymSet.has('apex-predator-facility')) {
@@ -315,6 +325,10 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     if (idx > 0 && !unlockedGymSet.has(GENERAL_GYM_CHAIN[idx - 1])) {
       const prevGym = state.gyms.find((g) => g.slug === GENERAL_GYM_CHAIN[idx - 1]);
       return `Unlock ${prevGym?.displayName ?? 'the previous gym'} first.`;
+    }
+    const gym = state.gyms.find((g) => g.slug === slug);
+    if (gym && state.totalGymEnergySpent < gym.energyRequired) {
+      return `Need ${state.totalGymEnergySpent.toLocaleString()} / ${gym.energyRequired.toLocaleString()} lifetime gym energy spent.`;
     }
     return 'Gym is locked.';
   };
@@ -358,7 +372,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     [...state.gyms]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .forEach((gym) => {
-        const tier = gymTierBySlug[gym.slug] ?? 'special';
+        const tier = gym.tier ?? 'special';
         grouped[tier].push(gym);
       });
 
@@ -523,6 +537,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               <div className="rounded border border-[#344257] bg-[#1a2432] px-2 py-2 text-xs text-[#c6d5e8]">
                 Active Gym: <span className="font-semibold text-[#eef2f8]">{activeGym?.displayName ?? 'None'}</span>
                 <div className="text-[#90a2bb]">{activeGym?.energyPerTrain ?? 5} Stamina per train</div>
+                <div className="text-[#90a2bb]">Lifetime Gym Energy Spent: {state.totalGymEnergySpent.toLocaleString()}</div>
               </div>
               <label className="text-xs text-[#9aacc3]">
                 Train count
@@ -667,6 +682,17 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                       {renderDotPills(dots)}
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 rounded border border-[#2f3c4f] bg-[#121923] p-2 text-xs">
+                  <p className="mb-1 text-[#cfe0f4]">
+                    Energy Progress: {state.totalGymEnergySpent.toLocaleString()} / {selectedGym.energyRequired.toLocaleString()}
+                  </p>
+                  <div className="h-2 rounded bg-[#0f1620]">
+                    <div
+                      className="h-full rounded bg-cyan-700"
+                      style={{ width: `${Math.max(0, Math.min(100, (state.totalGymEnergySpent / Math.max(1, selectedGym.energyRequired)) * 100))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             )}

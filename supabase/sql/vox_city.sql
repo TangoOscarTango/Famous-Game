@@ -28,6 +28,7 @@ create table if not exists public.vox_city_profiles (
   max_happy integer not null default 100,
   life integer not null default 100,
   max_life integer not null default 100,
+  total_gym_energy_spent bigint not null default 0,
   scavenging_skill integer not null default 1,
   college_classes integer not null default 0,
   scrap integer not null default 0,
@@ -110,8 +111,10 @@ create table if not exists public.vox_city_gyms (
   slug text primary key,
   display_name text not null,
   sort_order integer not null unique,
+  tier text not null default 'special' check (tier in ('lightweight', 'medium', 'heavyweight', 'special')),
   fp_cost bigint not null default 0 check (fp_cost >= 0),
   energy_per_train integer not null check (energy_per_train in (5, 10, 25, 50)),
+  energy_required bigint not null default 0 check (energy_required >= 0),
   dot_ferocity double precision not null,
   dot_agility double precision not null,
   dot_instinct_combat double precision not null,
@@ -125,27 +128,83 @@ create table if not exists public.vox_city_gym_unlocks (
   primary key (user_id, gym_slug)
 );
 
+-- Legacy gym slug migration before new progression data.
+update public.vox_city_profiles
+set active_gym = 'shoreline-brawlers'
+where active_gym = 'pack-training-grounds';
+
+update public.vox_city_profiles
+set active_gym = 'bonebreaker-yard'
+where active_gym = 'warclaw-conditioning-center';
+
+update public.vox_city_profiles
+set active_gym = 'pioneer-den'
+where active_gym = 'vixenvox-athletic-complex';
+
+insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+select user_id, 'shoreline-brawlers'
+from public.vox_city_gym_unlocks
+where gym_slug = 'pack-training-grounds'
+on conflict (user_id, gym_slug) do nothing;
+
+insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+select user_id, 'bonebreaker-yard'
+from public.vox_city_gym_unlocks
+where gym_slug = 'warclaw-conditioning-center'
+on conflict (user_id, gym_slug) do nothing;
+
+insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+select user_id, 'pioneer-den'
+from public.vox_city_gym_unlocks
+where gym_slug = 'vixenvox-athletic-complex'
+on conflict (user_id, gym_slug) do nothing;
+
+delete from public.vox_city_gym_unlocks
+where gym_slug in ('pack-training-grounds', 'warclaw-conditioning-center', 'vixenvox-athletic-complex');
+
+delete from public.vox_city_gyms
+where slug in ('pack-training-grounds', 'warclaw-conditioning-center', 'vixenvox-athletic-complex');
+
 insert into public.vox_city_gyms (
-  slug, display_name, sort_order, fp_cost, energy_per_train,
+  slug, display_name, sort_order, tier, fp_cost, energy_per_train, energy_required,
   dot_ferocity, dot_agility, dot_instinct_combat, dot_grit
 )
 values
-  ('scrap-yard-gym', 'Scrap Yard Gym', 1, 0, 5, 1.2, 1.2, 1.2, 1.2),
-  ('rustfang-fitness', 'Rustfang Fitness', 2, 250, 5, 1.5, 1.5, 1.5, 1.5),
-  ('iron-den', 'Iron Den', 3, 1200, 10, 2.0, 2.0, 2.0, 2.0),
-  ('pack-training-grounds', 'Pack Training Grounds', 4, 3500, 10, 2.5, 2.5, 2.5, 2.5),
-  ('warclaw-conditioning-center', 'Warclaw Conditioning Center', 5, 8500, 25, 4.6, 4.6, 4.6, 4.6),
-  ('vixenvox-athletic-complex', 'Vixenvox Athletic Complex', 6, 18000, 25, 5.7, 5.7, 5.7, 5.7),
-  ('apex-predator-facility', 'Apex Predator Facility', 7, 42000, 25, 7.8, 7.8, 7.8, 7.8),
-  ('fangforge', 'Fangforge', 8, 80000, 50, 9.5, 7.2, 7.2, 7.2),
-  ('ghoststep-arena', 'Ghoststep Arena', 9, 80000, 50, 7.2, 9.5, 7.2, 7.2),
-  ('shadow-reflex-lab', 'Shadow Reflex Lab', 10, 80000, 50, 7.2, 7.2, 9.5, 7.2),
-  ('ironhide-bastion', 'Ironhide Bastion', 11, 80000, 50, 7.2, 7.2, 7.2, 9.5)
+  ('scrap-yard-gym', 'Scrap Yard Gym', 1, 'lightweight', 10, 5, 0, 2.0, 2.0, 2.0, 2.0),
+  ('rustfang-fitness', 'Rustfang Fitness', 2, 'lightweight', 100, 5, 200, 2.4, 2.4, 2.8, 2.4),
+  ('iron-den', 'Iron Den', 3, 'lightweight', 250, 5, 500, 2.7, 3.2, 3.0, 2.7),
+  ('shoreline-brawlers', 'Shoreline Brawlers', 4, 'lightweight', 500, 5, 1000, 3.2, 3.2, 3.2, 3.2),
+  ('silverfang-gym', 'Silverfang Gym', 5, 'lightweight', 1000, 5, 2000, 3.4, 3.6, 3.4, 3.2),
+  ('vixen-form-studio', 'Vixen Form Studio', 6, 'lightweight', 2500, 5, 2750, 3.4, 3.6, 3.6, 3.8),
+  ('denmasters-pit', 'Denmasters Pit', 7, 'lightweight', 5000, 5, 3000, 3.7, 3.7, 3.7, 3.7),
+  ('vox-central-gym', 'Vox Central Gym', 8, 'lightweight', 10000, 5, 3500, 4.0, 4.0, 4.0, 4.0),
+  ('bonebreaker-yard', 'Bonebreaker Yard', 9, 'medium', 50000, 10, 4000, 4.8, 4.4, 4.0, 4.2),
+  ('pioneer-den', 'Pioneer Den', 10, 'medium', 100000, 10, 6000, 4.4, 4.6, 4.8, 4.4),
+  ('anomaly-forge', 'Anomaly Forge', 11, 'medium', 250000, 10, 7000, 5.0, 4.6, 5.2, 4.6),
+  ('core-facility', 'Core Facility', 12, 'medium', 500000, 10, 8000, 5.0, 5.2, 5.0, 5.0),
+  ('razortrack-fitness', 'Razortrack Fitness', 13, 'medium', 1000000, 10, 11000, 5.0, 5.4, 4.8, 5.2),
+  ('pulse-cardio-hub', 'Pulse Cardio Hub', 14, 'medium', 2000000, 10, 12420, 5.5, 5.7, 5.5, 5.2),
+  ('lowerbody-forge', 'Lowerbody Forge', 15, 'medium', 3000000, 10, 18000, 5.5, 5.5, 5.5, 5.7),
+  ('deep-burn-complex', 'Deep Burn Complex', 16, 'medium', 5000000, 10, 18100, 6.0, 6.0, 6.0, 6.0),
+  ('apollo-den', 'Apollo Den', 17, 'heavyweight', 7500000, 10, 24140, 6.0, 6.2, 6.4, 6.2),
+  ('iron-armory', 'Iron Armory', 18, 'heavyweight', 10000000, 10, 31260, 6.5, 6.4, 6.2, 6.2),
+  ('force-conditioning', 'Force Conditioning', 19, 'heavyweight', 15000000, 10, 36610, 6.4, 6.5, 6.4, 6.8),
+  ('cha-den-arena', 'Cha Den Arena', 20, 'heavyweight', 20000000, 10, 46640, 6.4, 6.4, 6.8, 7.0),
+  ('atlas-stronghold', 'Atlas Stronghold', 21, 'heavyweight', 30000000, 10, 56520, 7.0, 6.4, 6.4, 6.5),
+  ('last-round-pit', 'Last Round Pit', 22, 'heavyweight', 50000000, 10, 67775, 6.8, 6.5, 7.0, 6.5),
+  ('the-edge-arena', 'The Edge Arena', 23, 'heavyweight', 75000000, 10, 84535, 6.8, 7.0, 7.0, 6.8),
+  ('apex-predator-facility', 'Apex Predator Facility', 24, 'heavyweight', 100000000, 10, 106305, 7.3, 7.3, 7.3, 7.3),
+  ('fangforge', 'Fangforge', 25, 'special', 120000000, 50, 106305, 9.5, 7.2, 7.2, 7.2),
+  ('ghoststep-arena', 'Ghoststep Arena', 26, 'special', 120000000, 50, 106305, 7.2, 9.5, 7.2, 7.2),
+  ('shadow-reflex-lab', 'Shadow Reflex Lab', 27, 'special', 120000000, 50, 106305, 7.2, 7.2, 9.5, 7.2),
+  ('ironhide-bastion', 'Ironhide Bastion', 28, 'special', 120000000, 50, 106305, 7.2, 7.2, 7.2, 9.5)
 on conflict (slug) do update
 set display_name = excluded.display_name,
     sort_order = excluded.sort_order,
+    tier = excluded.tier,
     fp_cost = excluded.fp_cost,
     energy_per_train = excluded.energy_per_train,
+    energy_required = excluded.energy_required,
     dot_ferocity = excluded.dot_ferocity,
     dot_agility = excluded.dot_agility,
     dot_instinct_combat = excluded.dot_instinct_combat,
@@ -258,6 +317,7 @@ alter table public.vox_city_profiles
   add column if not exists gym_agility double precision not null default 1,
   add column if not exists gym_instinct_combat double precision not null default 1,
   add column if not exists gym_grit double precision not null default 1,
+  add column if not exists total_gym_energy_spent bigint not null default 0,
   add column if not exists vox_points integer not null default 0,
   add column if not exists inventory_items jsonb not null default '[]'::jsonb,
   add column if not exists medical_cooldown_seconds integer not null default 0,
@@ -268,6 +328,24 @@ alter table public.vox_city_profiles
   add column if not exists academy_active_course_slug text,
   add column if not exists academy_started_at timestamptz,
   add column if not exists active_gym text not null default 'scrap-yard-gym';
+
+alter table public.vox_city_gyms
+  add column if not exists tier text not null default 'special',
+  add column if not exists energy_required bigint not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vox_city_gyms_tier_check'
+  ) then
+    alter table public.vox_city_gyms
+      add constraint vox_city_gyms_tier_check
+      check (tier in ('lightweight', 'medium', 'heavyweight', 'special'));
+  end if;
+end
+$$;
 
 alter table public.vox_city_profiles enable row level security;
 alter table public.vox_city_gym_unlocks enable row level security;
@@ -570,6 +648,7 @@ begin
     set energy = v_profile.energy,
         nerve = v_profile.nerve,
         happy = v_profile.happy,
+        total_gym_energy_spent = v_profile.total_gym_energy_spent,
         vox_points = v_profile.vox_points,
         life = v_profile.life,
         regen_energy_at = v_profile.regen_energy_at,
@@ -593,8 +672,10 @@ begin
         'slug', g.slug,
         'displayName', g.display_name,
         'sortOrder', g.sort_order,
+        'tier', g.tier,
         'costFp', g.fp_cost,
         'energyPerTrain', g.energy_per_train,
+        'energyRequired', g.energy_required,
         'dots', jsonb_build_object(
           'ferocity', g.dot_ferocity,
           'agility', g.dot_agility,
@@ -716,6 +797,7 @@ begin
     ),
     'scavengingSkill', v_profile.scavenging_skill,
     'collegeClasses', v_profile.college_classes,
+    'totalGymEnergySpent', v_profile.total_gym_energy_spent,
     'inventory', jsonb_build_object(
       'scrap', v_profile.scrap,
       'components', v_profile.components,
@@ -796,6 +878,7 @@ declare
   v_entry jsonb;
   v_target_gym text;
   v_target_order integer;
+  v_target_energy_required bigint;
   v_required_prev_slug text;
   v_is_special boolean := false;
   v_apex_unlocked boolean := false;
@@ -1032,6 +1115,7 @@ begin
 
       v_total_gain := v_total_gain + v_base;
       v_profile.energy := greatest(0, v_profile.energy - v_energy_per_train);
+      v_profile.total_gym_energy_spent := v_profile.total_gym_energy_spent + v_energy_per_train;
 
       v_happy_loss := round((v_energy_per_train::numeric / 10.0) * (4 + floor(random() * 3))::numeric, 0)::integer;
       v_profile.happy := greatest(0, v_profile.happy - v_happy_loss);
@@ -1060,8 +1144,8 @@ begin
       raise exception 'Gym already unlocked.';
     end if;
 
-    select sort_order
-      into v_target_order
+    select sort_order, energy_required
+      into v_target_order, v_target_energy_required
     from public.vox_city_gyms
     where slug = v_target_gym;
 
@@ -1082,7 +1166,7 @@ begin
         raise exception 'Apex Predator Facility must be unlocked first.';
       end if;
     else
-      if v_target_order > 1 and v_target_order <= 7 then
+      if v_target_order > 1 and v_target_order <= 24 then
         select slug
           into v_required_prev_slug
         from public.vox_city_gyms
@@ -1097,16 +1181,10 @@ begin
           raise exception 'Previous gym must be unlocked first.';
         end if;
       end if;
-    end if;
 
-    if v_target_gym = 'fangforge' and v_profile.ferocity < 500 then
-      raise exception 'Need 500 Ferocity to unlock this specialist gym.';
-    elsif v_target_gym = 'ghoststep-arena' and v_profile.agility < 500 then
-      raise exception 'Need 500 Agility to unlock this specialist gym.';
-    elsif v_target_gym = 'shadow-reflex-lab' and v_profile.instinct_combat < 500 then
-      raise exception 'Need 500 Instinct to unlock this specialist gym.';
-    elsif v_target_gym = 'ironhide-bastion' and v_profile.grit < 500 then
-      raise exception 'Need 500 Grit to unlock this specialist gym.';
+      if v_target_order <= 24 and v_profile.total_gym_energy_spent < v_target_energy_required then
+        raise exception 'Not enough lifetime gym energy spent to unlock this gym.';
+      end if;
     end if;
 
     select balance_sats
@@ -1152,6 +1230,14 @@ begin
 
     insert into public.vox_city_gym_unlocks (user_id, gym_slug)
     values (p_user_id, v_target_gym);
+
+    if v_target_gym = 'apex-predator-facility' then
+      insert into public.vox_city_gym_unlocks (user_id, gym_slug)
+      select p_user_id, slug
+      from public.vox_city_gyms
+      where tier = 'special'
+      on conflict (user_id, gym_slug) do nothing;
+    end if;
 
     v_profile.active_gym := v_target_gym;
     v_notice := 'Gym unlocked and activated.';
@@ -1977,6 +2063,7 @@ begin
         life = v_profile.life,
         max_life = v_profile.max_life,
         vox_points = v_profile.vox_points,
+        total_gym_energy_spent = v_profile.total_gym_energy_spent,
         scavenging_skill = v_profile.scavenging_skill,
         college_classes = v_profile.college_classes,
         scrap = v_profile.scrap,

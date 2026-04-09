@@ -9,6 +9,7 @@ import RandomTiming from '@/components/RandomTiming';
 import ZeldaGame from '@/components/ZeldaGame';
 import Chat from '@/components/Chat';
 import WalletHub from '@/components/WalletHub';
+import VoxCity from '@/components/VoxCity';
 
 const AppContent: React.FC = () => {
   const { loading } = useAuth();
@@ -32,6 +33,21 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (currentPage === 'vox-city') {
+    return (
+      <>
+        <VoxCity
+          onBackToHub={() => setCurrentPage('dashboard')}
+          onOpenAuth={() => setAuthModalOpen(true)}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+        />
+      </>
+    );
+  }
+
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -44,6 +60,8 @@ const AppContent: React.FC = () => {
         return <Chat />;
       case 'wallet':
         return <WalletHub />;
+      case 'vox-city':
+        return <VoxCity onBackToHub={() => setCurrentPage('dashboard')} onOpenAuth={() => setAuthModalOpen(true)} />;
       default:
         return <Dashboard />;
     }
@@ -61,6 +79,8 @@ const AppContent: React.FC = () => {
         return 'Chat';
       case 'wallet':
         return 'Wallet';
+      case 'vox-city':
+        return 'Vox City';
       default:
         return 'Dashboard';
     }

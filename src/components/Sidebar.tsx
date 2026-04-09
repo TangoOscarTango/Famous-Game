@@ -53,6 +53,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, onNavig
       ),
     },
     {
+      id: 'vox-city',
+      label: 'Vox City',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21h18M5 21V7l4-4 4 4v14M13 21V11l3-3 3 3v10M9 11h.01M9 15h.01M16 14h.01M16 18h.01" />
+        </svg>
+      ),
+    },
+    {
       id: 'wallet',
       label: 'Wallet',
       icon: (

@@ -498,46 +498,42 @@ security definer
 set search_path = public
 as $$
 declare
+  v_stock record;
   v_now timestamptz := now();
   v_hours integer;
-  v_i integer;
-  v_change numeric;
+  v_step integer;
+  v_cur numeric(18,8);
+  v_pct numeric(10,6);
+  v_last_pct numeric(10,6);
+  v_last_update timestamptz;
 begin
-  for v_i in 1..(select count(*) from public.market_stocks) loop
-    update public.market_stocks s
-      set current_price_fp = (
-            with calc as (
-              select s.current_price_fp as cur,
-                     s.min_price_fp as minp,
-                     s.max_price_fp as maxp,
-                     greatest(0, floor(extract(epoch from (v_now - s.last_price_update_at)) / 3600)::int) as hrs
-            )
-            select
-              case
-                when hrs <= 0 then cur
-                else (
-                  select greatest(minp, least(maxp, np))
-                  from (
-                    select cur * exp(sum(ln(1 + ((random() * 0.04) - 0.02)))) as np
-                    from generate_series(1, hrs)
-                  ) q
-                )
-              end
-            from calc
-          ),
-          last_change_pct = ((random() * 0.04) - 0.02),
-          last_price_update_at = case
-            when floor(extract(epoch from (v_now - s.last_price_update_at)) / 3600)::int > 0
-              then date_trunc('hour', v_now)
-            else s.last_price_update_at
-          end
-    where s.slug = (
-      select slug
-      from public.market_stocks
-      order by slug
-      offset v_i - 1
-      limit 1
-    );
+  for v_stock in
+    select slug, current_price_fp, min_price_fp, max_price_fp, last_price_update_at, last_change_pct
+    from public.market_stocks
+    order by slug
+    for update
+  loop
+    v_hours := greatest(0, floor(extract(epoch from (v_now - v_stock.last_price_update_at)) / 3600)::int);
+    if v_hours <= 0 then
+      continue;
+    end if;
+
+    v_cur := v_stock.current_price_fp;
+    v_last_pct := v_stock.last_change_pct;
+    v_last_update := v_stock.last_price_update_at;
+
+    for v_step in 1..v_hours loop
+      v_pct := ((random() * 0.04) - 0.02)::numeric(10,6);
+      v_cur := greatest(v_stock.min_price_fp, least(v_stock.max_price_fp, v_cur * (1 + v_pct)));
+      v_last_pct := v_pct;
+      v_last_update := date_trunc('hour', v_last_update) + interval '1 hour';
+    end loop;
+
+    update public.market_stocks
+      set current_price_fp = round(v_cur, 8),
+          last_change_pct = v_last_pct,
+          last_price_update_at = v_last_update
+    where slug = v_stock.slug;
   end loop;
 end;
 $$;
@@ -1835,8 +1831,8 @@ begin
 
   elsif p_action = 'market_buy' then
     v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
-    v_market_amount_fp := coalesce((p_payload ->> 'amountFp')::numeric, 0);
-    if v_market_stock_slug = '' or v_market_amount_fp <= 0 then
+    v_market_shares := floor(coalesce((p_payload ->> 'shares')::numeric, 0));
+    if v_market_stock_slug = '' or v_market_shares <= 0 then
       raise exception 'Invalid market buy request.';
     end if;
 
@@ -1856,8 +1852,9 @@ begin
       raise exception 'Invalid stock.';
     end if;
 
-    v_market_fee := round(v_market_amount_fp * 0.005, 8);
-    v_market_tx_amount := v_market_amount_fp + v_market_fee;
+    v_market_tx_amount := round(v_market_shares * v_market_price, 8);
+    v_market_fee := round(v_market_tx_amount * 0.005, 8);
+    v_market_amount_fp := v_market_tx_amount + v_market_fee;
     if v_market_tx_amount <= 0 then
       raise exception 'Invalid transaction.';
     end if;
@@ -1875,17 +1872,12 @@ begin
         v_wallet_balance := 0;
       end if;
     end if;
-    if v_wallet_balance < ceil(v_market_tx_amount)::bigint then
+    if v_wallet_balance < ceil(v_market_amount_fp)::bigint then
       raise exception 'Not enough FP balance.';
     end if;
 
-    v_market_shares := round((v_market_amount_fp / v_market_price)::numeric, 6);
-    if v_market_shares <= 0 then
-      raise exception 'Amount too small for current stock price.';
-    end if;
-
     update public.wallet_profiles
-      set balance_sats = balance_sats - ceil(v_market_tx_amount)::bigint,
+      set balance_sats = balance_sats - ceil(v_market_amount_fp)::bigint,
           updated_at = now()
     where user_id = p_user_id;
 
@@ -1903,7 +1895,7 @@ begin
 
   elsif p_action = 'market_sell' then
     v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
-    v_market_shares := coalesce((p_payload ->> 'shares')::numeric, 0);
+    v_market_shares := floor(coalesce((p_payload ->> 'shares')::numeric, 0));
     if v_market_stock_slug = '' or v_market_shares <= 0 then
       raise exception 'Invalid market sell request.';
     end if;
@@ -1931,7 +1923,7 @@ begin
     end if;
 
     v_market_tx_amount := round(v_market_shares * v_market_price, 8);
-    v_market_fee := round(v_market_tx_amount * 0.005, 8);
+    v_market_fee := round(v_market_tx_amount * 0.015, 8);
     v_market_amount_fp := greatest(0, v_market_tx_amount - v_market_fee);
 
     update public.market_holdings

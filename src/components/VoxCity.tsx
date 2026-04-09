@@ -248,6 +248,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [inventoryCategory, setInventoryCategory] = useState('all');
   const [inventoryView, setInventoryView] = useState<'list' | 'grid'>('list');
   const [selectedGridItemName, setSelectedGridItemName] = useState<string>('');
+  const [marketSharesInput, setMarketSharesInput] = useState<Record<string, string>>({});
   const [moraleResetNow, setMoraleResetNow] = useState(Date.now());
   const [devPointDelta, setDevPointDelta] = useState<number>(1);
   const [devRestore, setDevRestore] = useState({
@@ -1023,41 +1024,68 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
             <p className="text-xs text-[#d9b58e]">Unlock Market Grid Access from Vox Exchange first.</p>
           ) : (
             <div className="space-y-2">
-              {state.market.stocks.map((stock) => (
-                <div key={stock.slug} className="rounded border border-[#344257] bg-[#1a2432] p-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#e3ecf9]">{stock.name}</span>
-                    <span className={Number(stock.lastChangePct) >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
-                      {(Number(stock.lastChangePct) * 100).toFixed(2)}%
-                    </span>
-                  </div>
-                  <p className="text-[#9db0c7]">Price: {Number(stock.currentPriceFp).toFixed(6)} FP â€¢ Shares: {Number(stock.sharesOwned).toFixed(2)}</p>
-                  <div className="mt-1 flex gap-2">
-                    <button disabled={busy} onClick={() => void runAction('market_buy', { stockSlug: stock.slug, amountFp: 100 })} className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246]">Buy 100 FP</button>
-                    <button disabled={busy || Number(stock.sharesOwned) <= 0} onClick={() => void runAction('market_sell', { stockSlug: stock.slug, shares: Math.max(1, Math.floor(Number(stock.sharesOwned) * 0.1)) })} className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246] disabled:opacity-40">Sell 10%</button>
-                  </div>
-                  <div className="mt-1 space-y-1">
-                    {stock.benefits.map((benefit) => {
-                      const progress = Math.max(0, Math.min(100, (Number(stock.sharesOwned) / Number(benefit.sharesRequired || 1)) * 100));
-                      return (
-                        <div key={benefit.key} className="rounded border border-[#2f3c4f] bg-[#121923] p-1">
-                          <p className="text-[11px] text-[#c9d8ea]">{benefit.key} ({benefit.sharesRequired.toLocaleString()} shares)</p>
-                          <div className="mt-1 h-2 rounded bg-[#0f1620]">
-                            <div className="h-full rounded bg-cyan-700" style={{ width: `${progress}%` }} />
+              {state.market.stocks.map((stock) => {
+                const inputShares = Math.max(1, Math.floor(Number(marketSharesInput[stock.slug] ?? '1') || 1));
+                const ownedShares = Math.max(0, Math.floor(Number(stock.sharesOwned || 0)));
+                return (
+                  <div key={stock.slug} className="rounded border border-[#344257] bg-[#1a2432] p-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[#e3ecf9]">{stock.name}</span>
+                      <span className={Number(stock.lastChangePct) >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                        {(Number(stock.lastChangePct) >= 0 ? '+' : '')}{(Number(stock.lastChangePct) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                    <p className="text-[#9db0c7]">Price: {Number(stock.currentPriceFp).toFixed(4)} FP • Shares: {ownedShares.toLocaleString()}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <label className="text-[11px] text-[#9db0c7]">Shares</label>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={marketSharesInput[stock.slug] ?? '1'}
+                        onChange={(e) => setMarketSharesInput((prev) => ({ ...prev, [stock.slug]: e.target.value }))}
+                        className="w-24 rounded border border-[#3c4a5d] bg-[#121923] px-2 py-1 text-[11px] text-[#e5edf8]"
+                      />
+                    </div>
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        disabled={busy || inputShares <= 0}
+                        onClick={() => void runAction('market_buy', { stockSlug: stock.slug, shares: inputShares })}
+                        className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246] disabled:opacity-40"
+                      >
+                        Buy Shares
+                      </button>
+                      <button
+                        disabled={busy || ownedShares <= 0 || inputShares > ownedShares}
+                        onClick={() => void runAction('market_sell', { stockSlug: stock.slug, shares: inputShares })}
+                        className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246] disabled:opacity-40"
+                      >
+                        Sell Shares
+                      </button>
+                    </div>
+                    <div className="mt-1 space-y-1">
+                      {stock.benefits.map((benefit) => {
+                        const progress = Math.max(0, Math.min(100, (ownedShares / Number(benefit.sharesRequired || 1)) * 100));
+                        return (
+                          <div key={benefit.key} className="rounded border border-[#2f3c4f] bg-[#121923] p-1">
+                            <p className="text-[11px] text-[#c9d8ea]">{benefit.key} ({benefit.sharesRequired.toLocaleString()} shares)</p>
+                            <div className="mt-1 h-2 rounded bg-[#0f1620]">
+                              <div className="h-full rounded bg-cyan-700" style={{ width: `${progress}%` }} />
+                            </div>
+                            <button
+                              disabled={busy || ownedShares < Number(benefit.sharesRequired)}
+                              onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
+                              className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
+                            >
+                              Claim
+                            </button>
                           </div>
-                          <button
-                            disabled={busy || Number(stock.sharesOwned) < Number(benefit.sharesRequired)}
-                            onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
-                            className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
-                          >
-                            Claim
-                          </button>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1225,4 +1253,5 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 };
 
 export default VoxCity;
+
 

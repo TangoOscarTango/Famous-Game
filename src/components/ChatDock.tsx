@@ -377,7 +377,7 @@ const ChatDock: React.FC = () => {
             <div className="border-t border-gray-700 px-3 py-2">
               <div className="relative h-0">
                 {showEnterHint && isCooldownActive && (
-                  <span className="hint-rise pointer-events-none absolute bottom-1 left-2 z-20 text-[11px] text-amber-300">
+                  <span className="hint-rise pointer-events-none absolute bottom-1 left-2 z-20 text-sm text-amber-300">
                     press enter twice to pay to send...
                   </span>
                 )}
@@ -419,7 +419,7 @@ const ChatDock: React.FC = () => {
                         enterHintTimerRef.current = window.setTimeout(() => {
                           setShowEnterHint(false);
                           enterHintTimerRef.current = null;
-                        }, 1000);
+                        }, 2000);
                       }
                     }}
                     maxLength={280}
@@ -480,7 +480,7 @@ const ChatDock: React.FC = () => {
           100% { opacity: 0; transform: translateY(-8px); }
         }
         .hint-rise {
-          animation: hintRise 1s ease-out forwards;
+          animation: hintRise 2s ease-out forwards;
         }
       `}</style>
     </div>

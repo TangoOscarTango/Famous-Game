@@ -379,6 +379,8 @@ declare
   v_target_gym text;
   v_target_order integer;
   v_required_prev_slug text;
+  v_is_special boolean := false;
+  v_apex_unlocked boolean := false;
   v_wallet_balance bigint;
   v_vital text;
   v_amount integer;
@@ -522,29 +524,34 @@ begin
       raise exception 'Invalid gym.';
     end if;
 
-    if v_target_order > 1 then
-      select slug
-        into v_required_prev_slug
-      from public.vox_city_gyms
-      where sort_order = v_target_order - 1;
-
-      if not exists (
-        select 1
-        from public.vox_city_gym_unlocks
-        where user_id = p_user_id
-          and gym_slug = v_required_prev_slug
-      ) then
-        raise exception 'Previous gym must be unlocked first.';
-      end if;
-    end if;
-
-    if v_target_order >= 8 and v_profile.active_gym <> 'apex-predator-facility' and not exists (
+    v_is_special := v_target_gym in ('fangforge', 'ghoststep-arena', 'shadow-reflex-lab', 'ironhide-bastion');
+    select exists (
       select 1
       from public.vox_city_gym_unlocks
       where user_id = p_user_id
         and gym_slug = 'apex-predator-facility'
-    ) then
-      raise exception 'Apex Predator Facility must be unlocked first.';
+    ) into v_apex_unlocked;
+
+    if v_is_special then
+      if not v_apex_unlocked then
+        raise exception 'Apex Predator Facility must be unlocked first.';
+      end if;
+    else
+      if v_target_order > 1 and v_target_order <= 7 then
+        select slug
+          into v_required_prev_slug
+        from public.vox_city_gyms
+        where sort_order = v_target_order - 1;
+
+        if not exists (
+          select 1
+          from public.vox_city_gym_unlocks
+          where user_id = p_user_id
+            and gym_slug = v_required_prev_slug
+        ) then
+          raise exception 'Previous gym must be unlocked first.';
+        end if;
+      end if;
     end if;
 
     if v_target_gym = 'fangforge' and v_profile.ferocity < 500 then

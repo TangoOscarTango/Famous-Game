@@ -82,6 +82,16 @@ interface VoxCityProps {
 }
 
 type GymTier = 'lightweight' | 'medium' | 'heavyweight' | 'special';
+const GENERAL_GYM_CHAIN = [
+  'scrap-yard-gym',
+  'rustfang-fitness',
+  'iron-den',
+  'pack-training-grounds',
+  'warclaw-conditioning-center',
+  'vixenvox-athletic-complex',
+  'apex-predator-facility',
+] as const;
+const SPECIALIST_GYMS = ['fangforge', 'ghoststep-arena', 'shadow-reflex-lab', 'ironhide-bastion'] as const;
 
 const navItems: Array<{ id: SectionId; label: string }> = [
   { id: 'home', label: 'District' },
@@ -177,6 +187,27 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     activeGym ??
     state.gyms[0];
   const formatStat = (value: number) => Number(value || 0).toFixed(4);
+  const unlockedGymSet = useMemo(() => new Set(state.gyms.filter((g) => g.unlocked).map((g) => g.slug)), [state.gyms]);
+  const canPurchaseGym = (slug: string) => {
+    if (unlockedGymSet.has(slug)) return false;
+    if ((SPECIALIST_GYMS as readonly string[]).includes(slug)) {
+      return unlockedGymSet.has('apex-predator-facility');
+    }
+    const idx = GENERAL_GYM_CHAIN.findIndex((gymSlug) => gymSlug === slug);
+    if (idx <= 0) return true;
+    return unlockedGymSet.has(GENERAL_GYM_CHAIN[idx - 1]);
+  };
+  const getLockedGymHint = (slug: string) => {
+    if ((SPECIALIST_GYMS as readonly string[]).includes(slug) && !unlockedGymSet.has('apex-predator-facility')) {
+      return 'Unlock Apex Predator Facility first.';
+    }
+    const idx = GENERAL_GYM_CHAIN.findIndex((gymSlug) => gymSlug === slug);
+    if (idx > 0 && !unlockedGymSet.has(GENERAL_GYM_CHAIN[idx - 1])) {
+      const prevGym = state.gyms.find((g) => g.slug === GENERAL_GYM_CHAIN[idx - 1]);
+      return `Unlock ${prevGym?.displayName ?? 'the previous gym'} first.`;
+    }
+    return 'Gym is locked.';
+  };
   const getGymInitials = (name: string) =>
     name
       .split(' ')
@@ -484,7 +515,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                         Activate
                       </button>
                     )
-                  ) : (
+                  ) : canPurchaseGym(selectedGym.slug) ? (
                     <button
                       disabled={busy}
                       onClick={() => void runAction('buy_gym', { gymSlug: selectedGym.slug })}
@@ -492,8 +523,13 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                     >
                       Unlock ({selectedGym.costFp.toLocaleString()} FP)
                     </button>
+                  ) : (
+                    <span className="rounded border border-[#4a3f3f] bg-[#2a2020] px-2 py-1 text-xs text-[#d5b4b4]">Locked</span>
                   )}
                 </div>
+                {!selectedGym.unlocked && !canPurchaseGym(selectedGym.slug) && (
+                  <p className="mt-2 text-xs text-[#d0a2a2]">{getLockedGymHint(selectedGym.slug)}</p>
+                )}
 
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#9fb0c5]">
                   {([

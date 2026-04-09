@@ -350,7 +350,10 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       abs >= 1000 ? 2 :
       abs >= 100 ? 3 :
       4;
-    return n.toFixed(decimals);
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
   };
   const nextMoraleResetMs = state.resources.nextMoraleResetAt ? new Date(state.resources.nextMoraleResetAt).getTime() : 0;
   const moraleOverMax = state.resources.happy > state.resources.maxHappy;

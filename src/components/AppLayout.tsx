@@ -13,6 +13,28 @@ import WalletHub from '@/components/WalletHub';
 import VoxCity from '@/components/VoxCity';
 import ChatDock from '@/components/ChatDock';
 
+const GenderIcon: React.FC<{ gender: 'male' | 'female' }> = ({ gender }) => {
+  const color = gender === 'female' ? '#f472b6' : '#60a5fa';
+  return (
+    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 items-center justify-center">
+      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="7" cy="7" r="3.5" />
+        {gender === 'female' ? (
+          <>
+            <path d="M7 10.5v4" />
+            <path d="M5 13h4" />
+          </>
+        ) : (
+          <>
+            <path d="M9.8 4.2L14 0" />
+            <path d="M11.5 0H14v2.5" />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+};
+
 const AppContent: React.FC = () => {
   const { loading, user } = useAuth();
   const { balanceFp } = useWallet();
@@ -169,12 +191,7 @@ const AppContent: React.FC = () => {
           </div>
           <div className="border-t border-gray-800/70 px-4 py-2 sm:px-6">
             <div className="flex items-center gap-3 text-xs">
-              <span
-                title={globalStatus.gender === 'female' ? 'Female' : 'Male'}
-                style={{ color: globalStatus.gender === 'female' ? '#f472b6' : '#60a5fa' }}
-              >
-                {globalStatus.gender === 'female' ? '[F]' : '[M]'}
-              </span>
+              <GenderIcon gender={globalStatus.gender} />
               {globalStatus.cooldowns.medicalSeconds > 0 && (
                 <span title={`Medical: ${fmt(globalStatus.cooldowns.medicalSeconds)}`} style={{ color: heat(globalStatus.cooldowns.medicalSeconds, globalStatus.cooldowns.medicalMaxSeconds) }}>
                   [M]

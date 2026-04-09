@@ -247,6 +247,62 @@ const gymTierLabels: Record<GymTier, string> = {
   special: 'Special',
 };
 
+const InventoryFilterIcon: React.FC<{ id: string; active: boolean }> = ({ id, active }) => {
+  const stroke = active ? '#d8f2ff' : '#8ea2bd';
+  const fill = active ? '#d8f2ff' : '#8ea2bd';
+  const cls = 'h-3.5 w-3.5';
+  const shared = { stroke, strokeWidth: 1.6, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+  switch (id) {
+    case 'all':
+      return <svg viewBox="0 0 16 16" className={cls}><rect x="2" y="2" width="5" height="5" {...shared} /><rect x="9" y="2" width="5" height="5" {...shared} /><rect x="2" y="9" width="5" height="5" {...shared} /><rect x="9" y="9" width="5" height="5" {...shared} /></svg>;
+    case 'favorite':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 2.2l1.7 3.5 3.9.6-2.8 2.8.7 3.9L8 11.1 4.5 13l.7-3.9L2.4 6.3l3.9-.6L8 2.2z" fill={fill} /></svg>;
+    case 'weapon':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M3 12l4-4m0 0l2-2m-2 2l3 3m0 0l1.5-1.5M7 8L4 5" {...shared} /></svg>;
+    case 'armor':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 2l5 2v4c0 3-2.1 4.8-5 6-2.9-1.2-5-3-5-6V4l5-2z" {...shared} /></svg>;
+    case 'medical':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 3v10M3 8h10" {...shared} /></svg>;
+    case 'drug':
+      return <svg viewBox="0 0 16 16" className={cls}><rect x="2.5" y="6" width="11" height="4" rx="2" {...shared} /><path d="M8 6v4" {...shared} /></svg>;
+    case 'temporary':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 2v6l3.5 2" {...shared} /><circle cx="8" cy="8" r="5.5" {...shared} /></svg>;
+    case 'special':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 2.5l1.2 2.5 2.8.4-2 2 .5 2.8L8 9l-2.5 1.2.5-2.8-2-2 2.8-.4L8 2.5z" {...shared} /></svg>;
+    case 'jewelry':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 2l4.5 4.5L8 14 3.5 6.5 8 2z" {...shared} /></svg>;
+    case 'book':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M3 3.5h4.5c1 0 1.5.5 1.5 1.5v7c0-1 .5-1.5 1.5-1.5H13V3.5h-2.5c-1 0-1.5.5-1.5 1.5 0-1-.5-1.5-1.5-1.5H3z" {...shared} /></svg>;
+    case 'morale':
+      return <svg viewBox="0 0 16 16" className={cls}><path d="M8 13s-4.5-2.6-4.5-5.8C3.5 5.1 5 4 6.5 4c.9 0 1.6.4 1.5 1.2C8.9 4.4 9.6 4 10.5 4 12 4 13.5 5.1 13.5 7.2 13.5 10.4 8 13 8 13z" fill={fill} /></svg>;
+    default:
+      return <svg viewBox="0 0 16 16" className={cls}><circle cx="8" cy="8" r="5.5" {...shared} /></svg>;
+  }
+};
+
+const GenderIcon: React.FC<{ gender: 'male' | 'female' }> = ({ gender }) => {
+  const color = gender === 'female' ? '#f472b6' : '#60a5fa';
+  return (
+    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 items-center justify-center">
+      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="7" cy="7" r="3.5" />
+        {gender === 'female' ? (
+          <>
+            <path d="M7 10.5v4" />
+            <path d="M5 13h4" />
+          </>
+        ) : (
+          <>
+            <path d="M9.8 4.2L14 0" />
+            <path d="M11.5 0H14v2.5" />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+};
+
 const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const { user } = useAuth();
   const [section, setSection] = useState<SectionId>('operations');
@@ -722,19 +778,19 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     }
 
     if (section === 'items') {
-      const filterButtons: Array<{ id: string; label: string; icon: string }> = [
-        { id: 'all', label: 'All', icon: 'ALL' },
-        { id: 'favorite', label: 'Fav', icon: 'FAV' },
-        { id: 'weapon', label: 'Weapons', icon: 'WPN' },
-        { id: 'armor', label: 'Armor', icon: 'ARM' },
-        { id: 'medical', label: 'Medical', icon: '+' },
-        { id: 'drug', label: 'Stimulants', icon: 'STM' },
-        { id: 'temporary', label: 'Temp', icon: 'TMP' },
-        { id: 'special', label: 'Special', icon: 'SPC' },
-        { id: 'jewelry', label: 'Jewelry', icon: 'JWL' },
-        { id: 'book', label: 'Books', icon: 'BK' },
-        { id: 'morale', label: 'Morale', icon: 'M' },
-        { id: 'misc', label: 'Misc', icon: 'MSC' },
+      const filterButtons: Array<{ id: string; label: string }> = [
+        { id: 'all', label: 'All' },
+        { id: 'favorite', label: 'Fav' },
+        { id: 'weapon', label: 'Weapons' },
+        { id: 'armor', label: 'Armor' },
+        { id: 'medical', label: 'Medical' },
+        { id: 'drug', label: 'Stimulants' },
+        { id: 'temporary', label: 'Temp' },
+        { id: 'special', label: 'Special' },
+        { id: 'jewelry', label: 'Jewelry' },
+        { id: 'book', label: 'Books' },
+        { id: 'morale', label: 'Morale' },
+        { id: 'misc', label: 'Misc' },
       ];
 
       return (
@@ -823,7 +879,9 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                       : 'border-[#3a4659] bg-[#141b25] text-[#8ea2bd]'
                   }`}
                 >
-                  {filter.icon}
+                  <span className="inline-flex items-center justify-center">
+                    <InventoryFilterIcon id={filter.id} active={inventoryCategory === filter.id} />
+                  </span>
                 </button>
               ))}
             </div>
@@ -1247,12 +1305,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               </div>
             </div>
             <div className="mt-2 flex items-center gap-3 text-xs">
-              <span
-                title={state.gender === 'female' ? 'Female' : 'Male'}
-                style={{ color: state.gender === 'female' ? '#f472b6' : '#60a5fa' }}
-              >
-                {state.gender === 'female' ? '[F]' : '[M]'}
-              </span>
+              <GenderIcon gender={state.gender} />
               {state.cooldowns.medicalSeconds > 0 && (
                 <span title={`Medical: ${formatDuration(state.cooldowns.medicalSeconds)}`} style={{ color: iconHeat(state.cooldowns.medicalSeconds, state.cooldowns.medicalMaxSeconds) }}>
                   [M]

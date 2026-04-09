@@ -48,8 +48,11 @@ const ChatDock: React.FC = () => {
   const [cooldownUntilByChannel, setCooldownUntilByChannel] = useState<Record<string, number>>({});
   const [nowMs, setNowMs] = useState(Date.now());
   const [showConfetti, setShowConfetti] = useState(false);
+  const [enterBypassArmedUntilMs, setEnterBypassArmedUntilMs] = useState(0);
+  const [showEnterHint, setShowEnterHint] = useState(false);
   const messagePaneRef = useRef<HTMLDivElement>(null);
   const previousActiveCooldownRef = useRef<number>(0);
+  const enterHintTimerRef = useRef<number | null>(null);
 
   const sortedEnabledChannels = useMemo(
     () =>
@@ -209,6 +212,8 @@ const ChatDock: React.FC = () => {
 
     setInput('');
     setSending(false);
+    setEnterBypassArmedUntilMs(0);
+    setShowEnterHint(false);
   };
 
   const toggleChannelEnabled = async (slug: string) => {
@@ -237,13 +242,17 @@ const ChatDock: React.FC = () => {
     0,
     Math.min(100, (activeCooldownRemainingMs / (activeCooldownSeconds * 1000)) * 100),
   );
+  const isCooldownActive = activeCooldownRemainingMs > 0;
 
   useEffect(() => {
     const prev = previousActiveCooldownRef.current;
     if (prev > 0 && activeCooldownRemainingMs <= 0) {
-      setShowConfetti(true);
-      const t = window.setTimeout(() => setShowConfetti(false), 900);
-      return () => window.clearTimeout(t);
+      const start = window.setTimeout(() => {
+        setShowConfetti(true);
+        const end = window.setTimeout(() => setShowConfetti(false), 900);
+        return () => window.clearTimeout(end);
+      }, 1000);
+      return () => window.clearTimeout(start);
     }
     previousActiveCooldownRef.current = activeCooldownRemainingMs;
   }, [activeCooldownRemainingMs]);
@@ -258,6 +267,25 @@ const ChatDock: React.FC = () => {
       setCanPayBypass(true);
     }
   }, [activeCooldownRemainingMs, statusText]);
+
+  useEffect(() => {
+    if (!isCooldownActive) {
+      setEnterBypassArmedUntilMs(0);
+      setShowEnterHint(false);
+      if (enterHintTimerRef.current) {
+        window.clearTimeout(enterHintTimerRef.current);
+        enterHintTimerRef.current = null;
+      }
+    }
+  }, [isCooldownActive]);
+
+  useEffect(() => {
+    return () => {
+      if (enterHintTimerRef.current) {
+        window.clearTimeout(enterHintTimerRef.current);
+      }
+    };
+  }, []);
 
   if (!user) return null;
 
@@ -287,7 +315,7 @@ const ChatDock: React.FC = () => {
               ))}
           </div>
           <button onClick={() => setSettingsOpen((s) => !s)} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700">
-            ⚙
+            Settings
           </button>
         </div>
 
@@ -359,22 +387,52 @@ const ChatDock: React.FC = () => {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        void sendMessage();
+                        if (!isCooldownActive) {
+                          void sendMessage();
+                          return;
+                        }
+
+                        const now = Date.now();
+                        if (enterBypassArmedUntilMs > now) {
+                          setEnterBypassArmedUntilMs(0);
+                          setShowEnterHint(false);
+                          if (enterHintTimerRef.current) {
+                            window.clearTimeout(enterHintTimerRef.current);
+                            enterHintTimerRef.current = null;
+                          }
+                          void sendMessage(true);
+                          return;
+                        }
+
+                        setEnterBypassArmedUntilMs(now + 900);
+                        setShowEnterHint(true);
+                        if (enterHintTimerRef.current) {
+                          window.clearTimeout(enterHintTimerRef.current);
+                        }
+                        enterHintTimerRef.current = window.setTimeout(() => {
+                          setShowEnterHint(false);
+                          enterHintTimerRef.current = null;
+                        }, 1000);
                       }
                     }}
                     maxLength={280}
                     placeholder={`Message #${activeChannel}`}
                     className="relative z-10 w-full bg-transparent px-2 py-1 text-sm text-gray-100 outline-none focus:border-cyan-600"
                   />
+                  {showEnterHint && isCooldownActive && (
+                    <span className="hint-rise pointer-events-none absolute bottom-full left-2 mb-1 text-[11px] text-amber-300">
+                      press enter twice to pay to send...
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => void sendMessage()}
-                  disabled={sending || !input.trim()}
-                  className="rounded bg-cyan-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+                  disabled={sending || !input.trim() || isCooldownActive}
+                  className="rounded bg-cyan-700 px-3 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Send
                 </button>
-                {canPayBypass && activeCooldownRemainingMs > 0 && (
+                {canPayBypass && isCooldownActive && (
                   <button
                     onClick={() => void sendMessage(true)}
                     disabled={sending || !input.trim()}
@@ -413,6 +471,14 @@ const ChatDock: React.FC = () => {
         @keyframes fadeOutUp {
           0% { opacity: 1; transform: translateY(0) scale(1); }
           100% { opacity: 0; transform: translateY(-14px) scale(0.7); }
+        }
+        @keyframes hintRise {
+          0% { opacity: 0; transform: translateY(8px); }
+          20% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-8px); }
+        }
+        .hint-rise {
+          animation: hintRise 1s ease-out forwards;
         }
       `}</style>
     </div>

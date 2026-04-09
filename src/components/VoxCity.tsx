@@ -81,6 +81,8 @@ interface VoxCityProps {
   onOpenAuth: () => void;
 }
 
+type GymTier = 'lightweight' | 'medium' | 'heavyweight' | 'special';
+
 const navItems: Array<{ id: SectionId; label: string }> = [
   { id: 'home', label: 'District' },
   { id: 'training', label: 'Training Grounds' },
@@ -120,6 +122,28 @@ const defaultState: VoxCityState = {
   activeGym: 'scrap-yard-gym',
   gyms: [],
   notice: 'City systems online.',
+};
+
+const gymTierOrder: GymTier[] = ['lightweight', 'medium', 'heavyweight', 'special'];
+const gymTierLabels: Record<GymTier, string> = {
+  lightweight: 'Lightweight',
+  medium: 'Medium',
+  heavyweight: 'Heavyweight',
+  special: 'Special',
+};
+
+const gymTierBySlug: Record<string, GymTier> = {
+  'scrap-yard-gym': 'lightweight',
+  'rustfang-fitness': 'lightweight',
+  'iron-den': 'lightweight',
+  'pack-training-grounds': 'lightweight',
+  'warclaw-conditioning-center': 'medium',
+  'vixenvox-athletic-complex': 'medium',
+  'apex-predator-facility': 'heavyweight',
+  'fangforge': 'special',
+  'ghoststep-arena': 'special',
+  'shadow-reflex-lab': 'special',
+  'ironhide-bastion': 'special',
 };
 
 const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
@@ -182,6 +206,24 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       </div>
     );
   };
+
+  const gymsByTier = useMemo(() => {
+    const grouped: Record<GymTier, VoxCityState['gyms']> = {
+      lightweight: [],
+      medium: [],
+      heavyweight: [],
+      special: [],
+    };
+
+    [...state.gyms]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .forEach((gym) => {
+        const tier = gymTierBySlug[gym.slug] ?? 'special';
+        grouped[tier].push(gym);
+      });
+
+    return grouped;
+  }, [state.gyms]);
 
   useEffect(() => {
     if (!selectedGymSlug && activeGym?.slug) {
@@ -340,20 +382,46 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
           <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
             <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Gym List</h2>
-            <div className="grid grid-rows-2 grid-flow-col auto-cols-[clamp(1.5rem,2.1vw,2.2rem)] gap-1 overflow-x-auto pb-1">
-              {state.gyms.map((gym) => (
-                <button
-                  key={gym.slug}
-                  onClick={() => setSelectedGymSlug(gym.slug)}
-                  className={`aspect-square min-h-[1.5rem] rounded border text-center text-[10px] font-semibold leading-none transition ${
-                    selectedGym?.slug === gym.slug
-                      ? 'border-cyan-500 bg-[#203247] text-[#e6f7ff]'
-                      : 'border-[#344257] bg-[#1a2432] text-[#c9d6e8] hover:bg-[#223248]'
-                  }`}
-                >
-                  <div className="pt-1 text-[10px]">{getGymInitials(gym.displayName)}</div>
-                </button>
-              ))}
+            <div className="space-y-3">
+              {gymTierOrder.map((tier) => {
+                const tierGyms = gymsByTier[tier];
+                return (
+                  <div key={tier}>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#90a2bb]">
+                      {gymTierLabels[tier]}
+                    </p>
+                    <div className="grid w-full grid-cols-8 gap-1 sm:gap-2">
+                      {Array.from({ length: 8 }).map((_, idx) => {
+                        const gym = tierGyms[idx];
+                        if (!gym) {
+                          return (
+                            <div
+                              key={`${tier}-empty-${idx}`}
+                              className="aspect-square w-full rounded border border-[#2e3643] bg-[#141b25]/70"
+                            />
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={gym.slug}
+                            onClick={() => setSelectedGymSlug(gym.slug)}
+                            className={`aspect-square w-full rounded border text-center text-[10px] font-semibold leading-none transition ${
+                              selectedGym?.slug === gym.slug
+                                ? 'border-cyan-500 bg-[#203247] text-[#e6f7ff]'
+                                : 'border-[#344257] bg-[#1a2432] text-[#c9d6e8] hover:bg-[#223248]'
+                            }`}
+                          >
+                            <div className="flex h-full items-center justify-center px-1 text-[10px]">
+                              {getGymInitials(gym.displayName)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {selectedGym && (

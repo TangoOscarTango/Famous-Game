@@ -4,6 +4,18 @@ import { useAuth } from '@/contexts/AuthContext';
 type BloodType = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
 type Outcome = 'Fail' | 'Partial' | 'Success' | 'Exceptional';
 type ApproachId = 'careful' | 'quick' | 'deep';
+type SectionId =
+  | 'home'
+  | 'training'
+  | 'items'
+  | 'academy'
+  | 'dens'
+  | 'operations'
+  | 'luck-den'
+  | 'work'
+  | 'lockup'
+  | 'recovery'
+  | 'pack';
 
 interface BattleStats {
   ferocity: number;
@@ -13,14 +25,21 @@ interface BattleStats {
 }
 
 interface ResourceStats {
-  stamina: number;
-  maxStamina: number;
-  instinctNerve: number;
-  maxInstinctNerve: number;
-  morale: number;
-  maxMorale: number;
-  hp: number;
-  maxHp: number;
+  energy: number;
+  maxEnergy: number;
+  nerve: number;
+  maxNerve: number;
+  happy: number;
+  maxHappy: number;
+  life: number;
+  maxLife: number;
+}
+
+interface RegenTimestamps {
+  energyAt: number;
+  nerveAt: number;
+  happyAt: number;
+  lifeAt: number;
 }
 
 interface InventoryState {
@@ -45,6 +64,7 @@ interface VoxCityState {
   collegeClasses: number;
   inventory: InventoryState;
   crimeLog: CrimeLogEntry[];
+  regen: RegenTimestamps;
   updatedAt: string;
 }
 
@@ -54,91 +74,147 @@ interface VoxCityProps {
 }
 
 const BLOOD_TYPES: BloodType[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const ENERGY_INTERVAL_MS = 5 * 60 * 1000;
+const NERVE_INTERVAL_MS = 5 * 60 * 1000;
+const HAPPY_INTERVAL_MS = 15 * 60 * 1000;
+const LIFE_INTERVAL_MS = 5 * 60 * 1000;
 
-const createInitialState = (): VoxCityState => ({
-  bloodType: BLOOD_TYPES[Math.floor(Math.random() * BLOOD_TYPES.length)],
-  battle: {
-    ferocity: 12 + Math.floor(Math.random() * 8),
-    agility: 12 + Math.floor(Math.random() * 8),
-    instinctCombat: 12 + Math.floor(Math.random() * 8),
-    grit: 12 + Math.floor(Math.random() * 8),
-  },
-  resources: {
-    stamina: 100,
-    maxStamina: 100,
-    instinctNerve: 45,
-    maxInstinctNerve: 45,
-    morale: 100,
-    maxMorale: 100,
-    hp: 100,
-    maxHp: 100,
-  },
-  scavengingSkill: 1,
-  collegeClasses: 0,
-  inventory: {
-    scrap: 0,
-    components: 0,
-    rareTech: 0,
-  },
-  crimeLog: [],
-  updatedAt: new Date().toISOString(),
-});
+const navItems: Array<{ id: SectionId; label: string }> = [
+  { id: 'home', label: 'District' },
+  { id: 'training', label: 'Training Grounds' },
+  { id: 'items', label: 'Items' },
+  { id: 'academy', label: 'Academy' },
+  { id: 'dens', label: 'Dens' },
+  { id: 'operations', label: 'Operations' },
+  { id: 'luck-den', label: 'Luck Den' },
+  { id: 'work', label: 'Work' },
+  { id: 'lockup', label: 'Lockup' },
+  { id: 'recovery', label: 'Recovery' },
+  { id: 'pack', label: 'Pack' },
+];
+
+const subNavBySection: Record<SectionId, string[]> = {
+  home: ['City Feed', 'Travel', 'Player List'],
+  training: ['Ferocity', 'Agility', 'Instinct', 'Grit'],
+  items: ['Inventory', 'Market', 'Storage'],
+  academy: ['Enroll', 'Current Class', 'Transcript'],
+  dens: ['Safehouse', 'Upgrades', 'Rent'],
+  operations: ['Scavenge the Ruins', 'Ops Log', 'Zones'],
+  'luck-den': ['Slots', 'Cards', 'Roulette'],
+  work: ['Job Board', 'Current Shift', 'Rank'],
+  lockup: ['Sentence', 'Bail', 'Legal'],
+  recovery: ['Ward', 'Rehab', 'Doctors'],
+  pack: ['Roster', 'Armory', 'Territory'],
+};
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
+const createInitialState = (): VoxCityState => {
+  const now = Date.now();
+  return {
+    bloodType: BLOOD_TYPES[Math.floor(Math.random() * BLOOD_TYPES.length)],
+    battle: {
+      ferocity: 12 + Math.floor(Math.random() * 8),
+      agility: 12 + Math.floor(Math.random() * 8),
+      instinctCombat: 12 + Math.floor(Math.random() * 8),
+      grit: 12 + Math.floor(Math.random() * 8),
+    },
+    resources: {
+      energy: 100,
+      maxEnergy: 100,
+      nerve: 10,
+      maxNerve: 10,
+      happy: 100,
+      maxHappy: 100,
+      life: 100,
+      maxLife: 100,
+    },
+    scavengingSkill: 1,
+    collegeClasses: 0,
+    inventory: {
+      scrap: 0,
+      components: 0,
+      rareTech: 0,
+    },
+    crimeLog: [],
+    regen: {
+      energyAt: now,
+      nerveAt: now,
+      happyAt: now,
+      lifeAt: now,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const applyRegen = (prev: VoxCityState): VoxCityState => {
+  const now = Date.now();
+  const next = { ...prev, resources: { ...prev.resources }, regen: { ...prev.regen } };
+
+  const energyTicks = Math.floor((now - prev.regen.energyAt) / ENERGY_INTERVAL_MS);
+  if (energyTicks > 0) {
+    next.resources.energy = clamp(prev.resources.energy + energyTicks * 5, 0, prev.resources.maxEnergy);
+    next.regen.energyAt = prev.regen.energyAt + energyTicks * ENERGY_INTERVAL_MS;
+  }
+
+  const nerveTicks = Math.floor((now - prev.regen.nerveAt) / NERVE_INTERVAL_MS);
+  if (nerveTicks > 0) {
+    next.resources.nerve = clamp(prev.resources.nerve + nerveTicks, 0, prev.resources.maxNerve);
+    next.regen.nerveAt = prev.regen.nerveAt + nerveTicks * NERVE_INTERVAL_MS;
+  }
+
+  const happyTicks = Math.floor((now - prev.regen.happyAt) / HAPPY_INTERVAL_MS);
+  if (happyTicks > 0) {
+    next.resources.happy = clamp(prev.resources.happy + happyTicks, 0, prev.resources.maxHappy);
+    next.regen.happyAt = prev.regen.happyAt + happyTicks * HAPPY_INTERVAL_MS;
+  }
+
+  const lifeTicks = Math.floor((now - prev.regen.lifeAt) / LIFE_INTERVAL_MS);
+  if (lifeTicks > 0) {
+    const lifeGainPerTick = Math.max(1, Math.floor(prev.resources.maxLife * 0.04));
+    next.resources.life = clamp(prev.resources.life + lifeTicks * lifeGainPerTick, 0, prev.resources.maxLife);
+    next.regen.lifeAt = prev.regen.lifeAt + lifeTicks * LIFE_INTERVAL_MS;
+  }
+
+  return next;
+};
+
 const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const { user } = useAuth();
-  const storageKey = useMemo(
-    () => `vox_city_state_${user?.id ?? 'guest'}`,
-    [user?.id],
-  );
+  const storageKey = useMemo(() => `vox_city_state_${user?.id ?? 'guest'}`, [user?.id]);
   const [state, setState] = useState<VoxCityState>(() => createInitialState());
-  const [notice, setNotice] = useState<string>('Welcome to Vox City.');
-  const [lastClassGain, setLastClassGain] = useState<string>('');
+  const [notice, setNotice] = useState<string>('City systems online.');
+  const [section, setSection] = useState<SectionId>('operations');
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) {
-        const initial = createInitialState();
-        setState(initial);
-        return;
-      }
-      const parsed = JSON.parse(raw) as VoxCityState;
-      if (!parsed?.bloodType || !parsed?.battle || !parsed?.resources) {
         setState(createInitialState());
         return;
       }
-      setState(parsed);
+      const parsed = JSON.parse(raw) as VoxCityState;
+      if (!parsed?.resources?.maxNerve) {
+        setState(createInitialState());
+        return;
+      }
+      setState(applyRegen(parsed));
     } catch {
       setState(createInitialState());
     }
   }, [storageKey]);
 
   useEffect(() => {
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify({ ...state, updatedAt: new Date().toISOString() }),
-    );
+    localStorage.setItem(storageKey, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }));
   }, [state, storageKey]);
 
   useEffect(() => {
-    const ticker = window.setInterval(() => {
-      setState((prev) => ({
-        ...prev,
-        resources: {
-          ...prev.resources,
-          stamina: clamp(prev.resources.stamina + 1, 0, prev.resources.maxStamina),
-          instinctNerve: clamp(prev.resources.instinctNerve + 1, 0, prev.resources.maxInstinctNerve),
-          morale: clamp(prev.resources.morale + 1, 0, prev.resources.maxMorale),
-          hp: clamp(prev.resources.hp + 1, 0, prev.resources.maxHp),
-        },
-      }));
-    }, 15000);
-    return () => window.clearInterval(ticker);
+    const timer = window.setInterval(() => {
+      setState((prev) => applyRegen(prev));
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  const bloodTypeVisible = state.collegeClasses >= 12;
   const deepDigUnlocked = state.scavengingSkill >= 25;
   const zonesUnlocked = [
     'Outmine Dungeons',
@@ -148,13 +224,12 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
   const trainStat = (key: keyof BattleStats, label: string) => {
     setState((prev) => {
-      if (prev.resources.stamina < 5) {
-        setNotice('Not enough Stamina to train.');
+      if (prev.resources.energy < 5) {
+        setNotice('Not enough Energy to train.');
         return prev;
       }
-      const moraleModifier = 1 + prev.resources.morale / 200;
-      const gain = Math.max(1, Math.floor((1 + Math.random() * 2.2) * moraleModifier));
 
+      const gain = Math.max(1, Math.floor((1 + Math.random() * 2.2) * (1 + prev.resources.happy / 200)));
       return {
         ...prev,
         battle: {
@@ -163,8 +238,8 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
         },
         resources: {
           ...prev.resources,
-          stamina: prev.resources.stamina - 5,
-          morale: clamp(prev.resources.morale - 2, 0, prev.resources.maxMorale),
+          energy: prev.resources.energy - 5,
+          happy: clamp(prev.resources.happy - 2, 0, prev.resources.maxHappy),
         },
       };
     });
@@ -173,105 +248,97 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
   const takeCollegeClass = () => {
     setState((prev) => {
-      if (prev.resources.stamina < 8 || prev.resources.morale < 5) {
-        setNotice('You need at least 8 Stamina and 5 Morale for class.');
+      if (prev.resources.energy < 8 || prev.resources.happy < 5) {
+        setNotice('Need at least 8 Energy and 5 Happy for class.');
         return prev;
       }
-      const className =
-        ['Human Biology', 'Trauma Response', 'Field Medicine', 'Clinical Procedure'][
-          Math.floor(Math.random() * 4)
-        ];
-      setLastClassGain(className);
-      setNotice(`Completed class: ${className}.`);
+
       return {
         ...prev,
         collegeClasses: prev.collegeClasses + 1,
         resources: {
           ...prev.resources,
-          stamina: prev.resources.stamina - 8,
-          morale: clamp(prev.resources.morale - 5, 0, prev.resources.maxMorale),
+          energy: prev.resources.energy - 8,
+          happy: clamp(prev.resources.happy - 5, 0, prev.resources.maxHappy),
         },
       };
     });
+    setNotice('Academy class completed.');
   };
 
   const runCrime = (approach: ApproachId) => {
     setState((prev) => {
-      const approachCfg = {
-        careful: { staminaCost: 4, nerveCost: 2, base: [0.14, 0.46, 0.34, 0.06] as const, label: 'Careful Search' },
-        quick: { staminaCost: 3, nerveCost: 3, base: [0.24, 0.34, 0.34, 0.08] as const, label: 'Quick Grab' },
-        deep: { staminaCost: 6, nerveCost: 4, base: [0.36, 0.24, 0.28, 0.12] as const, label: 'Deep Dig' },
+      const cfg = {
+        careful: { energyCost: 4, nerveCost: 2, base: [0.14, 0.46, 0.34, 0.06] as const, label: 'Careful Search' },
+        quick: { energyCost: 3, nerveCost: 3, base: [0.24, 0.34, 0.34, 0.08] as const, label: 'Quick Grab' },
+        deep: { energyCost: 6, nerveCost: 4, base: [0.36, 0.24, 0.28, 0.12] as const, label: 'Deep Dig' },
       }[approach];
 
       if (approach === 'deep' && !deepDigUnlocked) {
-        setNotice('Deep Dig unlocks at Scavenging skill 25.');
+        setNotice('Deep Dig unlocks at Scavenging 25.');
         return prev;
       }
 
-      if (
-        prev.resources.stamina < approachCfg.staminaCost ||
-        prev.resources.instinctNerve < approachCfg.nerveCost
-      ) {
-        setNotice('Not enough Stamina or Instinct (Nerve).');
+      if (prev.resources.energy < cfg.energyCost || prev.resources.nerve < cfg.nerveCost) {
+        setNotice('Insufficient Energy or Nerve.');
         return prev;
       }
 
       const skillBonus = Math.min(0.2, prev.scavengingSkill / 250);
-      const moraleBonus = Math.min(0.1, prev.resources.morale / 1000);
-      const failChance = clamp(approachCfg.base[0] - skillBonus, 0.04, 0.8);
-      const partialChance = clamp(approachCfg.base[1] - skillBonus / 3, 0.1, 0.8);
-      const successChance = clamp(approachCfg.base[2] + skillBonus + moraleBonus, 0.1, 0.8);
-      const exceptionalChance = clamp(
-        1 - (failChance + partialChance + successChance),
-        0.02,
-        0.3,
-      );
+      const happyBonus = Math.min(0.1, prev.resources.happy / 1000);
+
+      const failChance = clamp(cfg.base[0] - skillBonus, 0.04, 0.8);
+      const partialChance = clamp(cfg.base[1] - skillBonus / 3, 0.1, 0.8);
+      const successChance = clamp(cfg.base[2] + skillBonus + happyBonus, 0.1, 0.8);
+      const exceptionalChance = clamp(1 - (failChance + partialChance + successChance), 0.02, 0.3);
 
       const roll = Math.random();
-      const thresholds = [
-        failChance,
-        failChance + partialChance,
-        failChance + partialChance + successChance,
-        failChance + partialChance + successChance + exceptionalChance,
-      ];
+      const t1 = failChance;
+      const t2 = t1 + partialChance;
+      const t3 = t2 + successChance;
 
       let outcome: Outcome = 'Fail';
-      if (roll > thresholds[2]) outcome = 'Exceptional';
-      else if (roll > thresholds[1]) outcome = 'Success';
-      else if (roll > thresholds[0]) outcome = 'Partial';
+      if (roll > t3) outcome = 'Exceptional';
+      else if (roll > t2) outcome = 'Success';
+      else if (roll > t1) outcome = 'Partial';
 
       const next = { ...prev };
       next.resources = {
         ...prev.resources,
-        stamina: prev.resources.stamina - approachCfg.staminaCost,
-        instinctNerve: prev.resources.instinctNerve - approachCfg.nerveCost,
+        energy: prev.resources.energy - cfg.energyCost,
+        nerve: prev.resources.nerve - cfg.nerveCost,
       };
 
       let summary = '';
       let skillGain = 1;
       if (outcome === 'Fail') {
         const injury = clamp(Math.floor(2 + Math.random() * 5 - prev.battle.grit / 60), 1, 6);
-        next.resources.hp = clamp(prev.resources.hp - injury, 0, prev.resources.maxHp);
-        next.resources.morale = clamp(prev.resources.morale - 3, 0, prev.resources.maxMorale);
-        summary = `Found nothing. Minor injury (-${injury} HP).`;
+        next.resources.life = clamp(prev.resources.life - injury, 0, prev.resources.maxLife);
+        next.resources.happy = clamp(prev.resources.happy - 3, 0, prev.resources.maxHappy);
+        summary = `Found nothing. Minor injury (-${injury} Life).`;
       } else if (outcome === 'Partial') {
         const scrap = 1 + Math.floor(Math.random() * 3);
-        next.inventory.scrap += scrap;
+        next.inventory = { ...prev.inventory, scrap: prev.inventory.scrap + scrap };
         summary = `Recovered ${scrap} scrap.`;
       } else if (outcome === 'Success') {
         const scrap = 3 + Math.floor(Math.random() * 4);
         const components = 1 + Math.floor(Math.random() * 2);
-        next.inventory.scrap += scrap;
-        next.inventory.components += components;
+        next.inventory = {
+          ...prev.inventory,
+          scrap: prev.inventory.scrap + scrap,
+          components: prev.inventory.components + components,
+        };
         skillGain = 2;
         summary = `Recovered ${scrap} scrap and ${components} components.`;
       } else {
         const components = 2 + Math.floor(Math.random() * 3);
-        const rareTech = 1;
-        next.inventory.components += components;
-        next.inventory.rareTech += rareTech;
+        next.inventory = {
+          ...prev.inventory,
+          components: prev.inventory.components + components,
+          rareTech: prev.inventory.rareTech + 1,
+        };
         skillGain = 3;
-        summary = `Hit hidden stash: ${components} components and ${rareTech} rare tech.`;
+        summary = `Hit hidden stash: ${components} components and 1 rare tech.`;
       }
 
       if (approach === 'careful') skillGain += 1;
@@ -280,220 +347,173 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
       const entry: CrimeLogEntry = {
         id: crypto.randomUUID(),
-        approach: approachCfg.label,
+        approach: cfg.label,
         outcome,
         summary,
         at: new Date().toISOString(),
       };
-      next.crimeLog = [entry, ...prev.crimeLog].slice(0, 12);
 
-      setNotice(`${approachCfg.label}: ${summary}`);
+      next.crimeLog = [entry, ...prev.crimeLog].slice(0, 10);
+      setNotice(`${cfg.label}: ${summary}`);
+      void exceptionalChance;
       return next;
     });
   };
 
-  const resourcePct = (value: number, max: number) => `${Math.round((value / max) * 100)}%`;
-
-  return (
-    <div className="min-h-screen bg-[#1a1f27] text-[#d6dde8]">
-      <div className="border-b border-[#2e3643] bg-[#11161d] px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.25em] text-[#6f7d91]">Vox City</p>
-            <h1 className="text-xl font-semibold text-[#eef2f8]">Urban Operations Panel</h1>
-          </div>
-          <button
-            onClick={onBackToHub}
-            className="rounded border border-[#3c4a5d] bg-[#202a37] px-3 py-2 text-sm text-[#c9d4e5] hover:bg-[#273448]"
-          >
-            Back to TimeQuest Hub
-          </button>
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-7xl gap-4 p-4 sm:grid-cols-12 sm:p-6">
-        <section className="space-y-4 sm:col-span-4">
+  const renderContent = () => {
+    if (section === 'operations') {
+      return (
+        <div className="space-y-4">
           <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Identity</h2>
-            {user ? (
-              <p className="text-sm">
-                Operator: <span className="font-semibold text-[#eef2f8]">{user.displayName}</span>
-              </p>
-            ) : (
-              <button
-                onClick={onOpenAuth}
-                className="rounded border border-[#3c4a5d] bg-[#202a37] px-3 py-1.5 text-sm text-[#dbe6f5] hover:bg-[#273448]"
-              >
-                Sign in to save progress
-              </button>
-            )}
-            <p className="mt-2 text-sm">
-              Blood Type:{' '}
-              <span className="font-semibold text-[#eef2f8]">
-                {bloodTypeVisible ? state.bloodType : 'Classified'}
-              </span>
-            </p>
-            <p className="mt-1 text-xs text-[#7f91a8]">
-              Take 12 college classes to unlock blood-draw knowledge.
-            </p>
-          </div>
-
-          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Vitals</h2>
-            <div className="space-y-2 text-sm">
-              <div>
-                <div className="mb-1 flex justify-between">
-                  <span>Stamina (Energy)</span>
-                  <span>{state.resources.stamina}/{state.resources.maxStamina}</span>
-                </div>
-                <div className="h-2 rounded bg-[#2d3644]">
-                  <div className="h-2 rounded bg-[#44b2ff]" style={{ width: resourcePct(state.resources.stamina, state.resources.maxStamina) }} />
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 flex justify-between">
-                  <span>Instinct (Nerve)</span>
-                  <span>{state.resources.instinctNerve}/{state.resources.maxInstinctNerve}</span>
-                </div>
-                <div className="h-2 rounded bg-[#2d3644]">
-                  <div className="h-2 rounded bg-[#8dd95f]" style={{ width: resourcePct(state.resources.instinctNerve, state.resources.maxInstinctNerve) }} />
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 flex justify-between">
-                  <span>Morale (Happy)</span>
-                  <span>{state.resources.morale}/{state.resources.maxMorale}</span>
-                </div>
-                <div className="h-2 rounded bg-[#2d3644]">
-                  <div className="h-2 rounded bg-[#f2c35d]" style={{ width: resourcePct(state.resources.morale, state.resources.maxMorale) }} />
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 flex justify-between">
-                  <span>HP</span>
-                  <span>{state.resources.hp}/{state.resources.maxHp}</span>
-                </div>
-                <div className="h-2 rounded bg-[#2d3644]">
-                  <div className="h-2 rounded bg-[#ef6a6a]" style={{ width: resourcePct(state.resources.hp, state.resources.maxHp) }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Battle Stats</h2>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span>Ferocity (Strength)</span>
-                <button onClick={() => trainStat('ferocity', 'Ferocity')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">
-                  {state.battle.ferocity} Train
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Agility (Speed)</span>
-                <button onClick={() => trainStat('agility', 'Agility')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">
-                  {state.battle.agility} Train
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Instinct (Dexterity)</span>
-                <button onClick={() => trainStat('instinctCombat', 'Combat Instinct')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">
-                  {state.battle.instinctCombat} Train
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Grit (Defense)</span>
-                <button onClick={() => trainStat('grit', 'Grit')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">
-                  {state.battle.grit} Train
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-4 sm:col-span-8">
-          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-            <h2 className="text-base font-semibold text-[#eef2f8]">Crime: Scavenge the Ruins</h2>
+            <h2 className="text-lg font-semibold text-[#eef2f8]">Scavenge the Ruins</h2>
             <p className="mt-1 text-sm text-[#a7b5c8]">
-              Search abandoned Outmine dungeons for salvage, scrap, and rare tech.
+              Foundation operation. Low-risk repetition to build Scavenging and supply lines.
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
               <button onClick={() => runCrime('careful')} className="rounded border border-[#3c4a5d] bg-[#1a2432] p-3 text-left hover:bg-[#213046]">
                 <p className="text-sm font-semibold">Careful Search</p>
-                <p className="mt-1 text-xs text-[#93a5bd]">Low risk, low reward, steady skill growth.</p>
+                <p className="mt-1 text-xs text-[#93a5bd]">Low risk, low reward, steady skill gain.</p>
               </button>
               <button onClick={() => runCrime('quick')} className="rounded border border-[#3c4a5d] bg-[#1a2432] p-3 text-left hover:bg-[#213046]">
                 <p className="text-sm font-semibold">Quick Grab</p>
-                <p className="mt-1 text-xs text-[#93a5bd]">Fast run, higher fail chance, moderate reward.</p>
+                <p className="mt-1 text-xs text-[#93a5bd]">Faster run, higher fail chance, moderate reward.</p>
               </button>
               <button
                 onClick={() => runCrime('deep')}
                 className={`rounded border p-3 text-left ${deepDigUnlocked ? 'border-[#3c4a5d] bg-[#1a2432] hover:bg-[#213046]' : 'border-[#384051] bg-[#151c27] opacity-70'}`}
               >
                 <p className="text-sm font-semibold">Deep Dig</p>
-                <p className="mt-1 text-xs text-[#93a5bd]">
-                  {deepDigUnlocked ? 'High risk. Rare tech chance.' : 'Unlocks at Scavenging 25.'}
-                </p>
+                <p className="mt-1 text-xs text-[#93a5bd]">{deepDigUnlocked ? 'High risk, rare tech chance.' : 'Unlocks at Scavenging 25.'}</p>
               </button>
             </div>
-            <p className="mt-4 rounded border border-[#314056] bg-[#1a2433] px-3 py-2 text-sm text-[#d4deec]">
-              {notice}
-            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Progression</h3>
-              <p className="text-sm">Scavenging Skill: <span className="font-semibold text-[#eef2f8]">{state.scavengingSkill}</span></p>
-              <p className="mt-2 text-xs text-[#90a2bb]">Unlocks better loot tables and new zones.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
+            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+              <h3 className="mb-2 font-semibold text-[#dce6f5]">Progression</h3>
+              <p>Scavenging: <span className="font-semibold text-[#eef2f8]">{state.scavengingSkill}</span></p>
+              <p className="mt-2">Zones:</p>
+              <div className="mt-1 flex flex-wrap gap-2">
                 {zonesUnlocked.map((zone) => (
-                  <span key={zone} className="rounded border border-[#425167] bg-[#1a2432] px-2 py-1 text-xs">
-                    {zone}
-                  </span>
+                  <span key={zone} className="rounded border border-[#425167] bg-[#1a2432] px-2 py-1 text-xs">{zone}</span>
                 ))}
               </div>
             </div>
-
-            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Inventory</h3>
-              <div className="space-y-2 text-sm">
-                <p>Basic Scrap: <span className="font-semibold text-[#eef2f8]">{state.inventory.scrap}</span></p>
-                <p>Components: <span className="font-semibold text-[#eef2f8]">{state.inventory.components}</span></p>
-                <p>Rare Tech: <span className="font-semibold text-[#eef2f8]">{state.inventory.rareTech}</span></p>
-              </div>
+            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+              <h3 className="mb-2 font-semibold text-[#dce6f5]">Loot</h3>
+              <p>Scrap: <span className="font-semibold text-[#eef2f8]">{state.inventory.scrap}</span></p>
+              <p>Components: <span className="font-semibold text-[#eef2f8]">{state.inventory.components}</span></p>
+              <p>Rare Tech: <span className="font-semibold text-[#eef2f8]">{state.inventory.rareTech}</span></p>
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">College</h3>
-              <p className="text-sm">Classes Completed: <span className="font-semibold text-[#eef2f8]">{state.collegeClasses}</span></p>
-              <p className="mt-1 text-xs text-[#90a2bb]">Study toward clinical skills that reveal hidden profile data.</p>
-              <button onClick={takeCollegeClass} className="mt-3 rounded border border-[#3c4a5d] bg-[#1a2432] px-3 py-2 text-sm hover:bg-[#213046]">
-                Take Class (8 Stamina, 5 Morale)
+          <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Operation Log</h3>
+            <div className="space-y-2 text-sm">
+              {state.crimeLog.length === 0 ? (
+                <p className="text-[#90a2bb]">No operations run yet.</p>
+              ) : (
+                state.crimeLog.map((entry) => (
+                  <div key={entry.id} className="rounded border border-[#344257] bg-[#1a2432] p-2">
+                    <p className="font-semibold text-[#e4ecf8]">{entry.approach} - {entry.outcome}</p>
+                    <p className="text-xs text-[#9aacc3]">{entry.summary}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (section === 'training') {
+      return (
+        <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+          <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Training Grounds</h2>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button onClick={() => trainStat('ferocity', 'Ferocity')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">{state.battle.ferocity} Train</button></div>
+            <div className="flex items-center justify-between"><span>Agility (Speed)</span><button onClick={() => trainStat('agility', 'Agility')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">{state.battle.agility} Train</button></div>
+            <div className="flex items-center justify-between"><span>Instinct (Dexterity)</span><button onClick={() => trainStat('instinctCombat', 'Instinct')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">{state.battle.instinctCombat} Train</button></div>
+            <div className="flex items-center justify-between"><span>Grit (Defense)</span><button onClick={() => trainStat('grit', 'Grit')} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246]">{state.battle.grit} Train</button></div>
+          </div>
+        </div>
+      );
+    }
+
+    if (section === 'academy') {
+      return (
+        <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+          <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Academy</h2>
+          <p>Classes completed: <span className="font-semibold">{state.collegeClasses}</span></p>
+          <button onClick={takeCollegeClass} className="mt-3 rounded border border-[#3c4a5d] bg-[#1a2432] px-3 py-2 hover:bg-[#213046]">Take Class (8 Energy, 5 Happy)</button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+        <h2 className="text-lg font-semibold text-[#eef2f8]">{navItems.find((n) => n.id === section)?.label}</h2>
+        <p className="mt-2 text-[#9aacc3]">This module is staged and ready for implementation next.</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-[#1a1f27] text-[#d6dde8]">
+      <div className="mx-auto flex min-h-screen max-w-[1600px]">
+        <aside className="hidden w-72 border-r border-[#2e3643] bg-[#11161d] p-4 lg:block">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.25em] text-[#6f7d91]">Vox City</p>
+              <h1 className="text-lg font-semibold text-[#eef2f8]">Operations Net</h1>
+            </div>
+          </div>
+
+          <button onClick={onBackToHub} className="mb-4 w-full rounded border border-[#3c4a5d] bg-[#202a37] px-3 py-2 text-sm hover:bg-[#273448]">
+            Back to TimeQuest Hub
+          </button>
+
+          <nav className="space-y-1">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                className={`w-full rounded px-3 py-2 text-left text-sm ${section === item.id ? 'bg-[#253144] text-[#eef2f8]' : 'text-[#a7b5c8] hover:bg-[#1c2533]'}`}
+              >
+                {item.label}
               </button>
-              {lastClassGain ? <p className="mt-2 text-xs text-[#8da1b9]">Latest class: {lastClassGain}</p> : null}
-            </div>
+            ))}
+          </nav>
+        </aside>
 
-            <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#93a5bd]">Recent Operations</h3>
-              <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-sm">
-                {state.crimeLog.length === 0 ? (
-                  <p className="text-[#90a2bb]">No operations run yet.</p>
-                ) : (
-                  state.crimeLog.map((entry) => (
-                    <div key={entry.id} className="rounded border border-[#344257] bg-[#1a2432] p-2">
-                      <p className="font-semibold text-[#e4ecf8]">{entry.approach} - {entry.outcome}</p>
-                      <p className="text-xs text-[#9aacc3]">{entry.summary}</p>
-                      <p className="mt-1 text-[11px] text-[#7f91a8]">{new Date(entry.at).toLocaleTimeString()}</p>
-                    </div>
-                  ))
-                )}
+        <main className="flex-1">
+          <header className="border-b border-[#2e3643] bg-[#11161d] px-3 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={onBackToHub} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs lg:hidden">Back</button>
+              {!user ? (
+                <button onClick={onOpenAuth} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs">Sign In</button>
+              ) : (
+                <span className="rounded border border-[#334358] bg-[#1a2432] px-2 py-1 text-xs">{user.displayName}</span>
+              )}
+
+              <div className="ml-auto flex flex-wrap gap-2 text-xs">
+                <span className="rounded border border-[#4a3940] bg-[#2a1d22] px-2 py-1">Life {state.resources.life}/{state.resources.maxLife}</span>
+                <span className="rounded border border-[#35506c] bg-[#1a2a3a] px-2 py-1">Energy {state.resources.energy}/{state.resources.maxEnergy}</span>
+                <span className="rounded border border-[#3f5c35] bg-[#1e3121] px-2 py-1">Nerve {state.resources.nerve}/{state.resources.maxNerve}</span>
+                <span className="rounded border border-[#6a5a2f] bg-[#352d1b] px-2 py-1">Happy {state.resources.happy}/{state.resources.maxHappy}</span>
               </div>
             </div>
-          </div>
-        </section>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              {subNavBySection[section].map((label) => (
+                <span key={label} className="rounded border border-[#334358] bg-[#1a2432] px-2 py-1 text-xs text-[#b8c7da]">{label}</span>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-[#8aa0ba]">{notice}</p>
+          </header>
+
+          <div className="p-3 sm:p-5">{renderContent()}</div>
+        </main>
       </div>
     </div>
   );

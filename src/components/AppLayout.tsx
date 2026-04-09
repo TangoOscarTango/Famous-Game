@@ -16,8 +16,8 @@ import ChatDock from '@/components/ChatDock';
 const GenderIcon: React.FC<{ gender: 'male' | 'female' }> = ({ gender }) => {
   const color = gender === 'female' ? '#f472b6' : '#60a5fa';
   return (
-    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 items-center justify-center">
-      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 shrink-0 items-center justify-center align-middle leading-none">
+      <svg viewBox="0 0 16 16" className="block h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="7" cy="7" r="3.5" />
         {gender === 'female' ? (
           <>

@@ -250,7 +250,7 @@ const gymTierLabels: Record<GymTier, string> = {
 const InventoryFilterIcon: React.FC<{ id: string; active: boolean }> = ({ id, active }) => {
   const stroke = active ? '#d8f2ff' : '#8ea2bd';
   const fill = active ? '#d8f2ff' : '#8ea2bd';
-  const cls = 'h-3.5 w-3.5';
+  const cls = 'block h-3.5 w-3.5';
   const shared = { stroke, strokeWidth: 1.6, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
   switch (id) {
@@ -284,8 +284,8 @@ const InventoryFilterIcon: React.FC<{ id: string; active: boolean }> = ({ id, ac
 const GenderIcon: React.FC<{ gender: 'male' | 'female' }> = ({ gender }) => {
   const color = gender === 'female' ? '#f472b6' : '#60a5fa';
   return (
-    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 items-center justify-center">
-      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <span title={gender === 'female' ? 'Female' : 'Male'} className="inline-flex h-4 w-4 shrink-0 items-center justify-center align-middle leading-none">
+      <svg viewBox="0 0 16 16" className="block h-4 w-4" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="7" cy="7" r="3.5" />
         {gender === 'female' ? (
           <>
@@ -873,7 +873,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                   key={filter.id}
                   title={filter.label}
                   onClick={() => setInventoryCategory(filter.id)}
-                  className={`h-6 w-6 rounded border text-[11px] ${
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded border text-[11px] leading-none ${
                     inventoryCategory === filter.id
                       ? 'border-cyan-500 bg-[#1f3448] text-[#d8f2ff]'
                       : 'border-[#3a4659] bg-[#141b25] text-[#8ea2bd]'

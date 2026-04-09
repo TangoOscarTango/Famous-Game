@@ -128,6 +128,25 @@ create table if not exists public.vox_city_gym_unlocks (
   primary key (user_id, gym_slug)
 );
 
+-- Ensure new gym progression columns exist before seeding/upserting rows.
+alter table public.vox_city_gyms
+  add column if not exists tier text not null default 'special',
+  add column if not exists energy_required bigint not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'vox_city_gyms_tier_check'
+  ) then
+    alter table public.vox_city_gyms
+      add constraint vox_city_gyms_tier_check
+      check (tier in ('lightweight', 'medium', 'heavyweight', 'special'));
+  end if;
+end
+$$;
+
 -- Legacy gym slug migration before new progression data.
 update public.vox_city_profiles
 set active_gym = 'shoreline-brawlers'

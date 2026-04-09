@@ -1751,6 +1751,17 @@ begin
     v_profile.last_cooldown_processed_at := v_now;
     v_notice := 'All cooldowns reset to zero.';
 
+  elsif p_action = 'dev_adjust_points' then
+    if not coalesce(v_is_dev, false) then
+      raise exception 'Not allowed.';
+    end if;
+    v_amount := coalesce((p_payload ->> 'delta')::integer, 0);
+    if v_amount = 0 then
+      raise exception 'Delta must not be zero.';
+    end if;
+    v_profile.vox_points := greatest(0, v_profile.vox_points + v_amount);
+    v_notice := format('Vox Points adjusted by %s. Current: %s', v_amount, v_profile.vox_points);
+
   elsif p_action = 'academy_enroll' then
     v_course_slug := lower(coalesce(p_payload ->> 'courseSlug', ''));
     if v_course_slug = '' then

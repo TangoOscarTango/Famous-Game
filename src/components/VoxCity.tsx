@@ -249,6 +249,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [inventoryView, setInventoryView] = useState<'list' | 'grid'>('list');
   const [selectedGridItemName, setSelectedGridItemName] = useState<string>('');
   const [moraleResetNow, setMoraleResetNow] = useState(Date.now());
+  const [devPointDelta, setDevPointDelta] = useState<number>(1);
   const [devRestore, setDevRestore] = useState({
     life: 10,
     stamina: 10,
@@ -957,6 +958,30 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
         <div className="space-y-3 rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
           <h2 className="text-lg font-semibold text-[#eef2f8]">Vox Exchange</h2>
           <p className="text-xs text-[#9fb0c5]">Vox Points: <span className="font-semibold text-[#eef2f8]">{state.exchange.voxPoints}</span></p>
+          {state.isDev && (
+            <div className="flex items-center gap-2 rounded border border-[#5a4325] bg-[#2b2013] px-2 py-1 text-xs">
+              <input
+                type="number"
+                value={devPointDelta}
+                onChange={(e) => setDevPointDelta(Number(e.target.value) || 1)}
+                className="w-20 rounded border border-[#6a5537] bg-[#1d140a] px-2 py-1 text-[#f6ddb6]"
+              />
+              <button
+                disabled={busy}
+                onClick={() => void runAction('dev_adjust_points', { delta: Math.abs(devPointDelta || 1) })}
+                className="rounded border border-[#684e2b] bg-[#3d2d18] px-2 py-1 text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
+              >
+                +Points
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => void runAction('dev_adjust_points', { delta: -Math.abs(devPointDelta || 1) })}
+                className="rounded border border-[#684e2b] bg-[#3d2d18] px-2 py-1 text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
+              >
+                -Points
+              </button>
+            </div>
+          )}
           <div className="space-y-2">
             {state.exchange.catalog.map((entry) => {
               const purchased = state.exchange.unlocks.some((u) => u.slug === entry.slug);

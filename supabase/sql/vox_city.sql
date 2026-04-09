@@ -1891,7 +1891,12 @@ begin
     on conflict (key) do update
       set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
 
-    v_notice := format('Bought %s shares of %s (fee %s FP).', v_market_shares, v_market_stock_slug, v_market_fee);
+    v_notice := format(
+      'Bought %s shares of %s (fee %s FP).',
+      floor(v_market_shares)::bigint,
+      v_market_stock_slug,
+      round(v_market_fee, 2)
+    );
 
   elsif p_action = 'market_sell' then
     v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
@@ -1943,7 +1948,12 @@ begin
     on conflict (key) do update
       set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
 
-    v_notice := format('Sold %s shares of %s (fee %s FP).', v_market_shares, v_market_stock_slug, v_market_fee);
+    v_notice := format(
+      'Sold %s shares of %s (fee %s FP).',
+      floor(v_market_shares)::bigint,
+      v_market_stock_slug,
+      round(v_market_fee, 2)
+    );
 
   elsif p_action = 'market_claim' then
     v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));

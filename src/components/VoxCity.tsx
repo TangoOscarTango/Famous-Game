@@ -109,7 +109,7 @@ const navItems: Array<{ id: SectionId; label: string }> = [
 
 const subNavBySection: Record<SectionId, string[]> = {
   home: ['City Feed', 'Travel', 'Player List'],
-  training: ['Ferocity', 'Agility', 'Agility (Dexterity)', 'Grit'],
+  training: ['Ferocity', 'Agility', 'Instinct', 'Grit'],
   items: ['Inventory', 'Market', 'Storage'],
   academy: ['Enroll', 'Current Class', 'Transcript'],
   dens: ['Safehouse', 'Upgrades', 'Rent'],
@@ -413,10 +413,10 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               </label>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.ferocity)} Train</button></div>
-              <div className="flex items-center justify-between"><span>Agility (Speed)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.agility)} Train</button></div>
-              <div className="flex items-center justify-between"><span>Agility (Dexterity)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.instinctCombat)} Train</button></div>
-              <div className="flex items-center justify-between"><span>Grit (Defense)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.grit)} Train</button></div>
+              <div className="flex items-center justify-between"><span>Ferocity</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.ferocity)} Train</button></div>
+              <div className="flex items-center justify-between"><span>Agility</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.agility)} Train</button></div>
+              <div className="flex items-center justify-between"><span>Instinct</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.instinctCombat)} Train</button></div>
+              <div className="flex items-center justify-between"><span>Grit</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit', trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.grit)} Train</button></div>
             </div>
           </div>
 
@@ -535,7 +535,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                   {([
                     ['Ferocity', selectedGym.dots.ferocity],
                     ['Agility', selectedGym.dots.agility],
-                    ['Agility (Dexterity)', selectedGym.dots.instinctCombat],
+                    ['Instinct', selectedGym.dots.instinctCombat],
                     ['Grit', selectedGym.dots.grit],
                   ] as Array<[string, number]>).map(([label, dots]) => (
                     <div key={label} title={`${Number(dots).toFixed(1)} ${label}`}>

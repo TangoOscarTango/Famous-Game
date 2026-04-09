@@ -711,18 +711,18 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
     if (section === 'items') {
       const filterButtons: Array<{ id: string; label: string; icon: string }> = [
-        { id: 'all', label: 'All', icon: 'â˜°' },
-        { id: 'favorite', label: 'Fav', icon: 'â˜…' },
-        { id: 'weapon', label: 'Weapons', icon: 'âœ¦' },
-        { id: 'armor', label: 'Armor', icon: 'â¬’' },
+        { id: 'all', label: 'All', icon: 'ALL' },
+        { id: 'favorite', label: 'Fav', icon: 'FAV' },
+        { id: 'weapon', label: 'Weapons', icon: 'WPN' },
+        { id: 'armor', label: 'Armor', icon: 'ARM' },
         { id: 'medical', label: 'Medical', icon: '+' },
-        { id: 'drug', label: 'Stimulants', icon: 'â—‰' },
-        { id: 'temporary', label: 'Temp', icon: 'âŒ›' },
-        { id: 'special', label: 'Special', icon: 'â—†' },
-        { id: 'jewelry', label: 'Jewelry', icon: 'â—‡' },
-        { id: 'book', label: 'Books', icon: 'â–¤' },
+        { id: 'drug', label: 'Stimulants', icon: 'STM' },
+        { id: 'temporary', label: 'Temp', icon: 'TMP' },
+        { id: 'special', label: 'Special', icon: 'SPC' },
+        { id: 'jewelry', label: 'Jewelry', icon: 'JWL' },
+        { id: 'book', label: 'Books', icon: 'BK' },
         { id: 'morale', label: 'Morale', icon: 'M' },
-        { id: 'misc', label: 'Misc', icon: 'â—Œ' },
+        { id: 'misc', label: 'Misc', icon: 'MSC' },
       ];
 
       return (
@@ -762,9 +762,9 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               </div>
               <div className="rounded border border-[#3b4454] bg-[#101720] p-2 text-[11px] text-[#9fb0c5]">
                 <div className="mb-1 flex items-center justify-between">
-                  <button className="rounded border border-[#3a4659] px-1">â—€</button>
+                  <button className="rounded border border-[#3a4659] px-1">{'<'}</button>
                   <span className="text-[#d2dbe8]">Secondary</span>
-                  <button className="rounded border border-[#3a4659] px-1">â–¶</button>
+                  <button className="rounded border border-[#3a4659] px-1">{'>'}</button>
                 </div>
                 <div className="h-14 rounded border border-dashed border-[#3a4659] bg-[#151c27]" />
               </div>
@@ -876,7 +876,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                       <p className="truncate text-[#dfe8f4]">{item.name} {item.quantity > 1 ? `x${item.quantity}` : ''}</p>
                       <p className="truncate text-[10px] text-[#8fa2ba]">{item.description ?? item.category}</p>
                     </div>
-                    <span className="text-center text-[#6f8299]">âœ“</span>
+                    <span className="text-center text-[#6f8299]">OK</span>
                     <button
                       disabled={busy || item.quantity <= 0 || !canUseItem(item)}
                       onClick={() => void runAction('use_item', { itemName: item.name })}
@@ -928,7 +928,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                         <div key={course.slug} className="flex items-center justify-between rounded border border-[#2f3c4f] bg-[#121923] px-2 py-1 text-xs">
                           <div>
                             <p className="text-[#dce6f5]">{course.displayName}</p>
-                            <p className="text-[#90a2bb]">{course.bonus} â€¢ {formatDuration(course.durationSeconds)}</p>
+                            <p className="text-[#90a2bb]">{course.bonus} | {formatDuration(course.durationSeconds)}</p>
                           </div>
                           {course.completed ? (
                             <span className="text-emerald-300">Done</span>
@@ -1035,7 +1035,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                         {(Number(stock.lastChangePct) >= 0 ? '+' : '')}{(Number(stock.lastChangePct) * 100).toFixed(2)}%
                       </span>
                     </div>
-                    <p className="text-[#9db0c7]">Price: {Number(stock.currentPriceFp).toFixed(4)} FP • Shares: {ownedShares.toLocaleString()}</p>
+                    <p className="text-[#9db0c7]">Price: {Number(stock.currentPriceFp).toFixed(4)} FP | Shares: {ownedShares.toLocaleString()}</p>
                     <div className="mt-1 flex items-center gap-2">
                       <label className="text-[11px] text-[#9db0c7]">Shares</label>
                       <input
@@ -1227,7 +1227,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                 title={state.gender === 'female' ? 'Female' : 'Male'}
                 style={{ color: state.gender === 'female' ? '#f472b6' : '#60a5fa' }}
               >
-                {state.gender === 'female' ? 'â™€' : 'â™‚'}
+                {state.gender === 'female' ? '[F]' : '[M]'}
               </span>
               {state.cooldowns.medicalSeconds > 0 && (
                 <span title={`Medical: ${formatDuration(state.cooldowns.medicalSeconds)}`} style={{ color: iconHeat(state.cooldowns.medicalSeconds, state.cooldowns.medicalMaxSeconds) }}>

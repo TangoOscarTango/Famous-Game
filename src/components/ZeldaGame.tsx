@@ -531,10 +531,10 @@ const ZeldaGame: React.FC = () => {
       <div className="rounded-xl bg-gray-800/30 border border-gray-700/30 p-4">
         <h3 className="text-sm font-semibold text-white mb-2">How to Play</h3>
         <ul className="text-xs text-gray-400 space-y-1">
-          <li>• Use Arrow Keys or WASD to move</li>
-          <li>• Collect yellow rupees for points</li>
-          <li>• Collect red hearts to restore health</li>
-          <li>• Avoid purple enemies!</li>
+          <li>- Use Arrow Keys or WASD to move</li>
+          <li>- Collect yellow rupees for points</li>
+          <li>- Collect red hearts to restore health</li>
+          <li>- Avoid purple enemies!</li>
         </ul>
       </div>
     </div>
@@ -542,3 +542,4 @@ const ZeldaGame: React.FC = () => {
 };
 
 export default ZeldaGame;
+

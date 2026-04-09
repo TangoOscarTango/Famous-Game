@@ -173,7 +173,7 @@ const AppContent: React.FC = () => {
                 title={globalStatus.gender === 'female' ? 'Female' : 'Male'}
                 style={{ color: globalStatus.gender === 'female' ? '#f472b6' : '#60a5fa' }}
               >
-                {globalStatus.gender === 'female' ? '♀' : '♂'}
+                {globalStatus.gender === 'female' ? '[F]' : '[M]'}
               </span>
               {globalStatus.cooldowns.medicalSeconds > 0 && (
                 <span title={`Medical: ${fmt(globalStatus.cooldowns.medicalSeconds)}`} style={{ color: heat(globalStatus.cooldowns.medicalSeconds, globalStatus.cooldowns.medicalMaxSeconds) }}>
@@ -221,3 +221,4 @@ const AppLayout: React.FC = () => {
 };
 
 export default AppLayout;
+

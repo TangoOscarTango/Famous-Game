@@ -410,6 +410,15 @@ begin
     v_stat := lower(coalesce(p_payload ->> 'stat', ''));
     v_train_count := coalesce((p_payload ->> 'trains')::integer, 1);
     v_train_count := greatest(1, least(v_train_count, 100));
+    select g.*
+      into v_gym
+    from public.vox_city_gyms g
+    where g.slug = v_profile.active_gym;
+
+    if not found then
+      raise exception 'Active gym not found.';
+    end if;
+
     v_energy_per_train := v_gym.energy_per_train;
     v_perks := coalesce(p_payload -> 'perks', '[]'::jsonb);
 

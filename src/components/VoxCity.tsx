@@ -97,7 +97,19 @@ interface MarketState {
     maxPriceFp: number;
     lastChangePct: number;
     blockSize: number;
-    benefits: Array<{ key: string; sharesRequired: number; cooldownSeconds: number; rewardType: string; rewardValue?: number; rewardItem?: string; rewardQuantity?: number }>;
+    benefits: Array<{
+      key: string;
+      sharesRequired: number;
+      cooldownSeconds: number;
+      rewardType: string;
+      rewardValue?: number;
+      rewardItem?: string;
+      rewardQuantity?: number;
+      lastClaimedAt?: string | null;
+      nextClaimAt?: string | null;
+      cooldownRemainingSeconds?: number;
+      canClaim?: boolean;
+    }>;
     sharesOwned: number;
   }>;
 }
@@ -1016,7 +1028,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
             <h2 className="text-lg font-semibold text-[#eef2f8]">Market Grid</h2>
             {state.isDev && (
               <span className="rounded border border-[#5a4325] bg-[#2b2013] px-2 py-1 text-xs text-[#f3cd8d]">
-                Treasury (FP): {state.market.treasuryFp.toLocaleString()}
+                Treasury (FP): {Number(state.market.treasuryFp || 0).toFixed(4)}
               </span>
             )}
           </div>
@@ -1066,6 +1078,16 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                     <div className="mt-1 space-y-1">
                       {stock.benefits.map((benefit) => {
                         const progress = Math.max(0, Math.min(100, (ownedShares / Number(benefit.sharesRequired || 1)) * 100));
+                        const nextClaimAtMs = benefit.nextClaimAt ? new Date(benefit.nextClaimAt).getTime() : 0;
+                        const cooldownRemaining = nextClaimAtMs > 0 ? Math.max(0, Math.floor((nextClaimAtMs - moraleResetNow) / 1000)) : 0;
+                        const canClaimByCooldown = cooldownRemaining <= 0 && (benefit.canClaim ?? true);
+                        const hasSharesForBenefit = ownedShares >= Number(benefit.sharesRequired);
+                        const claimDisabled = busy || !hasSharesForBenefit || !canClaimByCooldown;
+                        const claimTitle = !hasSharesForBenefit
+                          ? `Requires ${Number(benefit.sharesRequired).toLocaleString()} shares`
+                          : !canClaimByCooldown
+                            ? `Next claim in ${formatDuration(cooldownRemaining)}`
+                            : 'Claim now';
                         const rewardLabel =
                           benefit.rewardItem === 'Outmine Entertainment Disk (OED)'
                             ? 'Claim OED'
@@ -1082,7 +1104,8 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                               <div className="h-full rounded bg-cyan-700" style={{ width: `${progress}%` }} />
                             </div>
                             <button
-                              disabled={busy || ownedShares < Number(benefit.sharesRequired)}
+                              disabled={claimDisabled}
+                              title={claimTitle}
                               onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
                               className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
                             >

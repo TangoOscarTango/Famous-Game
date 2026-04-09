@@ -104,8 +104,12 @@ create table if not exists public.market_benefit_claims (
 
 create table if not exists public.vox_city_global_state (
   key text primary key,
-  fp_value bigint not null default 0
+  fp_value numeric(18,8) not null default 0
 );
+
+alter table if exists public.vox_city_global_state
+  alter column fp_value type numeric(18,8)
+  using fp_value::numeric(18,8);
 
 create table if not exists public.vox_city_gyms (
   slug text primary key,
@@ -563,7 +567,7 @@ declare
   v_academy jsonb := '{}'::jsonb;
   v_exchange jsonb := '{}'::jsonb;
   v_market jsonb := '{}'::jsonb;
-  v_treasury_fp bigint := 0;
+  v_treasury_fp numeric(18,8) := 0;
   v_profile public.vox_city_profiles%rowtype;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
@@ -784,7 +788,45 @@ begin
           'maxPriceFp', s.max_price_fp,
           'lastChangePct', s.last_change_pct,
           'blockSize', s.block_size,
-          'benefits', s.benefits,
+          'benefits', (
+            select coalesce(
+              jsonb_agg(
+                b.value || jsonb_build_object(
+                  'lastClaimedAt', c.last_claimed_at,
+                  'nextClaimAt',
+                    case
+                      when c.last_claimed_at is null then null
+                      else c.last_claimed_at + make_interval(secs => greatest(0, coalesce((b.value->>'cooldownSeconds')::integer, 0)))
+                    end,
+                  'cooldownRemainingSeconds',
+                    case
+                      when c.last_claimed_at is null then 0
+                      else greatest(
+                        0,
+                        floor(
+                          extract(
+                            epoch from (
+                              c.last_claimed_at + make_interval(secs => greatest(0, coalesce((b.value->>'cooldownSeconds')::integer, 0))) - v_now
+                            )
+                          )
+                        )::integer
+                      )
+                    end,
+                  'canClaim',
+                    case
+                      when c.last_claimed_at is null then true
+                      else v_now >= c.last_claimed_at + make_interval(secs => greatest(0, coalesce((b.value->>'cooldownSeconds')::integer, 0)))
+                    end
+                )
+              ),
+              '[]'::jsonb
+            )
+            from jsonb_array_elements(s.benefits) as b(value)
+            left join public.market_benefit_claims c
+              on c.user_id = p_user_id
+             and c.stock_slug = s.slug
+             and c.benefit_key = coalesce(b.value->>'key', '')
+          ),
           'sharesOwned', coalesce(h.shares, 0)
         )
         order by s.slug
@@ -939,7 +981,7 @@ declare
   v_course_order integer;
   v_prev_course_slug text;
   v_course_duration integer;
-  v_treasury_value bigint;
+  v_treasury_value numeric(18,8);
   v_skill_gain integer := 0;
   v_fail_text text;
   v_common_items text[] := array[
@@ -1887,7 +1929,7 @@ begin
       set shares = public.market_holdings.shares + excluded.shares;
 
     insert into public.vox_city_global_state (key, fp_value)
-    values ('global_treasury_fp', ceil(v_market_fee)::bigint)
+    values ('global_treasury_fp', v_market_fee)
     on conflict (key) do update
       set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
 
@@ -1895,7 +1937,7 @@ begin
       'Bought %s shares of %s (fee %s FP).',
       floor(v_market_shares)::bigint,
       v_market_stock_slug,
-      round(v_market_fee, 2)
+      to_char(round(v_market_fee, 4), 'FM9999999990.0000')
     );
 
   elsif p_action = 'market_sell' then
@@ -1944,7 +1986,7 @@ begin
     where user_id = p_user_id;
 
     insert into public.vox_city_global_state (key, fp_value)
-    values ('global_treasury_fp', ceil(v_market_fee)::bigint)
+    values ('global_treasury_fp', v_market_fee)
     on conflict (key) do update
       set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
 
@@ -1952,7 +1994,7 @@ begin
       'Sold %s shares of %s (fee %s FP).',
       floor(v_market_shares)::bigint,
       v_market_stock_slug,
-      round(v_market_fee, 2)
+      to_char(round(v_market_fee, 4), 'FM9999999990.0000')
     );
 
   elsif p_action = 'market_claim' then

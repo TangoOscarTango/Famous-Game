@@ -1515,6 +1515,9 @@ begin
 
     v_item_category := coalesce(v_existing_item->>'category', 'misc');
     v_item_morale_boost := coalesce((v_existing_item->>'moraleBoost')::integer, 0);
+    if v_item_name = 'Outmine Entertainment Disk (OED)' then
+      v_item_morale_boost := 2500;
+    end if;
     v_item_energy_boost := coalesce((v_existing_item->>'energyBoost')::integer, 0);
     v_item_life_boost := coalesce((v_existing_item->>'lifeBoost')::integer, 0);
     v_item_cooldown_type := coalesce(v_existing_item->>'cooldownType', 'none');

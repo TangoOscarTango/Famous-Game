@@ -94,7 +94,7 @@ const subNavBySection: Record<SectionId, string[]> = {
 };
 
 const defaultState: VoxCityState = {
-  battle: { ferocity: 15, agility: 15, instinctCombat: 15, grit: 15 },
+  battle: { ferocity: 5, agility: 5, instinctCombat: 5, grit: 5 },
   resources: { energy: 100, maxEnergy: 100, nerve: 10, maxNerve: 10, happy: 100, maxHappy: 100, life: 100, maxLife: 100 },
   scavengingSkill: 1,
   collegeClasses: 0,
@@ -111,6 +111,8 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('City systems online.');
+  const [trainingEnergy, setTrainingEnergy] = useState<5 | 10 | 25 | 50>(5);
+  const [trainingTrains, setTrainingTrains] = useState<number>(1);
 
   const zonesUnlocked = useMemo(
     () => [
@@ -122,6 +124,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   );
 
   const deepDigUnlocked = state.scavengingSkill >= 25;
+  const formatStat = (value: number) => Number(value || 0).toFixed(4);
 
   const loadState = async (silent = false) => {
     if (!user) {
@@ -246,11 +249,37 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       return (
         <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
           <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Training Grounds</h2>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <label className="text-xs text-[#9aacc3]">
+              Energy per train
+              <select
+                value={trainingEnergy}
+                onChange={(e) => setTrainingEnergy(Number(e.target.value) as 5 | 10 | 25 | 50)}
+                className="mt-1 w-full rounded border border-[#3c4a5d] bg-[#1a2432] px-2 py-1 text-sm text-[#e6eef9]"
+              >
+                <option value={5}>5E</option>
+                <option value={10}>10E</option>
+                <option value={25}>25E</option>
+                <option value={50}>50E</option>
+              </select>
+            </label>
+            <label className="text-xs text-[#9aacc3]">
+              Train count
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={trainingTrains}
+                onChange={(e) => setTrainingTrains(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                className="mt-1 w-full rounded border border-[#3c4a5d] bg-[#1a2432] px-2 py-1 text-sm text-[#e6eef9]"
+              />
+            </label>
+          </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity' })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{state.battle.ferocity} Train</button></div>
-            <div className="flex items-center justify-between"><span>Agility (Speed)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility' })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{state.battle.agility} Train</button></div>
-            <div className="flex items-center justify-between"><span>Instinct (Dexterity)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat' })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{state.battle.instinctCombat} Train</button></div>
-            <div className="flex items-center justify-between"><span>Grit (Defense)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit' })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{state.battle.grit} Train</button></div>
+            <div className="flex items-center justify-between"><span>Ferocity (Strength)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'ferocity', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.ferocity)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Agility (Speed)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'agility', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.agility)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Instinct (Dexterity)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'instinctCombat', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.instinctCombat)} Train</button></div>
+            <div className="flex items-center justify-between"><span>Grit (Defense)</span><button disabled={busy} onClick={() => void runAction('train', { stat: 'grit', energy: trainingEnergy, trains: trainingTrains })} className="rounded border border-[#3c4a5d] px-2 py-1 text-xs hover:bg-[#243246] disabled:opacity-60">{formatStat(state.battle.grit)} Train</button></div>
           </div>
         </div>
       );

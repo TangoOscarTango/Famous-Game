@@ -7,10 +7,14 @@ alter table public.user_profiles
 create table if not exists public.vox_city_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   blood_type text not null check (blood_type in ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
-  ferocity integer not null default 15,
-  agility integer not null default 15,
-  instinct_combat integer not null default 15,
-  grit integer not null default 15,
+  ferocity double precision not null default 5,
+  agility double precision not null default 5,
+  instinct_combat double precision not null default 5,
+  grit double precision not null default 5,
+  gym_ferocity double precision not null default 1,
+  gym_agility double precision not null default 1,
+  gym_instinct_combat double precision not null default 1,
+  gym_grit double precision not null default 1,
   energy integer not null default 100,
   max_energy integer not null default 100,
   nerve integer not null default 10,
@@ -31,6 +35,22 @@ create table if not exists public.vox_city_profiles (
   regen_life_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.vox_city_profiles
+  alter column ferocity type double precision using ferocity::double precision,
+  alter column agility type double precision using agility::double precision,
+  alter column instinct_combat type double precision using instinct_combat::double precision,
+  alter column grit type double precision using grit::double precision,
+  alter column ferocity set default 5,
+  alter column agility set default 5,
+  alter column instinct_combat set default 5,
+  alter column grit set default 5;
+
+alter table public.vox_city_profiles
+  add column if not exists gym_ferocity double precision not null default 1,
+  add column if not exists gym_agility double precision not null default 1,
+  add column if not exists gym_instinct_combat double precision not null default 1,
+  add column if not exists gym_grit double precision not null default 1;
 
 alter table public.vox_city_profiles enable row level security;
 
@@ -186,6 +206,27 @@ declare
   v_stat text;
   v_approach text;
   v_gain integer;
+  v_train_count integer;
+  v_trains_done integer := 0;
+  v_energy_per_train integer;
+  v_s_formula double precision;
+  v_h_formula double precision;
+  v_log_term numeric;
+  v_multiplier numeric;
+  v_part1 double precision;
+  v_part2 double precision;
+  v_part3 double precision;
+  v_part4 double precision;
+  v_random_term integer;
+  v_base double precision;
+  v_gym_dots double precision;
+  v_const_a double precision;
+  v_const_b double precision;
+  v_const_c integer;
+  v_perks jsonb;
+  v_perk numeric;
+  v_happy_loss integer;
+  v_total_gain double precision := 0;
   v_roll double precision;
   v_skill_bonus double precision;
   v_happy_bonus double precision;
@@ -224,30 +265,101 @@ begin
 
   if p_action = 'train' then
     v_stat := lower(coalesce(p_payload ->> 'stat', ''));
-    if v_profile.energy < 5 then
-      raise exception 'Not enough Energy.';
+    v_train_count := coalesce((p_payload ->> 'trains')::integer, 1);
+    v_train_count := greatest(1, least(v_train_count, 100));
+    v_energy_per_train := coalesce((p_payload ->> 'energy')::integer, 5);
+    v_perks := coalesce(p_payload -> 'perks', '[]'::jsonb);
+
+    if v_energy_per_train not in (5, 10, 25, 50) then
+      raise exception 'Energy per train must be one of 5, 10, 25, 50.';
     end if;
 
-    v_gain := greatest(1, floor((1 + random() * 2.2) * (1 + v_profile.happy / 200.0)));
-
     if v_stat = 'ferocity' then
-      v_profile.ferocity := v_profile.ferocity + v_gain;
-      v_notice := 'Ferocity trained.';
+      v_const_a := 1600;
+      v_const_b := 1700;
+      v_const_c := 700;
+      v_gym_dots := v_profile.gym_ferocity;
     elsif v_stat = 'agility' then
-      v_profile.agility := v_profile.agility + v_gain;
-      v_notice := 'Agility trained.';
+      v_const_a := 1600;
+      v_const_b := 2000;
+      v_const_c := 1350;
+      v_gym_dots := v_profile.gym_agility;
     elsif v_stat = 'instinctcombat' then
-      v_profile.instinct_combat := v_profile.instinct_combat + v_gain;
-      v_notice := 'Instinct trained.';
+      v_const_a := 1800;
+      v_const_b := 1500;
+      v_const_c := 1000;
+      v_gym_dots := v_profile.gym_instinct_combat;
     elsif v_stat = 'grit' then
-      v_profile.grit := v_profile.grit + v_gain;
-      v_notice := 'Grit trained.';
+      v_const_a := 2100;
+      v_const_b := -600;
+      v_const_c := 1500;
+      v_gym_dots := v_profile.gym_grit;
     else
       raise exception 'Invalid training stat.';
     end if;
 
-    v_profile.energy := greatest(0, v_profile.energy - 5);
-    v_profile.happy := greatest(0, v_profile.happy - 2);
+    v_gym_dots := greatest(0, least(v_gym_dots, 10));
+
+    for v_gain in 1..v_train_count loop
+      exit when v_profile.energy < v_energy_per_train;
+
+      if v_stat = 'ferocity' then
+        v_s_formula := least(v_profile.ferocity, 50000000);
+      elsif v_stat = 'agility' then
+        v_s_formula := least(v_profile.agility, 50000000);
+      elsif v_stat = 'instinctcombat' then
+        v_s_formula := least(v_profile.instinct_combat, 50000000);
+      else
+        v_s_formula := least(v_profile.grit, 50000000);
+      end if;
+
+      v_h_formula := greatest(0, least(v_profile.happy, 99999));
+      v_log_term := round(ln(1 + (v_h_formula / 250.0))::numeric, 4);
+      v_multiplier := round((1 + 0.07 * v_log_term)::numeric, 4);
+
+      v_part1 := v_s_formula * v_multiplier::double precision;
+      v_part2 := 8 * power(v_h_formula, 1.05);
+      v_part3 := (1 - power(v_h_formula / 99999.0, 2)) * v_const_a;
+      v_part4 := v_const_b;
+      v_random_term := floor(random() * (2 * v_const_c + 1))::integer - v_const_c;
+
+      v_base := v_part1 + v_part2 + v_part3 + v_part4 + v_random_term;
+      v_base := v_base / 200000.0;
+      v_base := v_base * v_gym_dots * v_energy_per_train;
+
+      if jsonb_typeof(v_perks) = 'array' then
+        for v_perk in
+          select value::numeric
+          from jsonb_array_elements_text(v_perks)
+        loop
+          v_base := v_base * (1 + v_perk::double precision);
+        end loop;
+      end if;
+
+      if v_stat = 'ferocity' then
+        v_profile.ferocity := v_profile.ferocity + v_base;
+      elsif v_stat = 'agility' then
+        v_profile.agility := v_profile.agility + v_base;
+      elsif v_stat = 'instinctcombat' then
+        v_profile.instinct_combat := v_profile.instinct_combat + v_base;
+      else
+        v_profile.grit := v_profile.grit + v_base;
+      end if;
+
+      v_total_gain := v_total_gain + v_base;
+      v_profile.energy := greatest(0, v_profile.energy - v_energy_per_train);
+
+      v_happy_loss := round((v_energy_per_train::numeric / 10.0) * (4 + floor(random() * 3))::numeric, 0)::integer;
+      v_profile.happy := greatest(0, v_profile.happy - v_happy_loss);
+
+      v_trains_done := v_trains_done + 1;
+    end loop;
+
+    if v_trains_done = 0 then
+      raise exception 'Not enough Energy.';
+    end if;
+
+    v_notice := format('Training complete: %s train(s), +%s total gain.', v_trains_done, round(v_total_gain::numeric, 4));
 
   elsif p_action = 'class' then
     if v_profile.energy < 8 or v_profile.happy < 5 then
@@ -422,5 +534,16 @@ update public.user_profiles set user_type = 'player';
 update public.user_profiles
 set user_type = 'dev'
 where user_id = '9ef0de96-c84d-46fe-a43a-b285d209d5cf';
+
+-- Normalize old starter rows created before stat defaults changed to 5.
+update public.vox_city_profiles
+set ferocity = 5,
+    agility = 5,
+    instinct_combat = 5,
+    grit = 5
+where ferocity = 15
+  and agility = 15
+  and instinct_combat = 15
+  and grit = 15;
 
 notify pgrst, 'reload schema';

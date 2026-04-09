@@ -161,6 +161,27 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
       .slice(0, 2)
       .map((word) => word[0]?.toUpperCase() ?? '')
       .join('');
+  const renderDotPills = (dots: number) => {
+    const clamped = Math.max(0, Math.min(10, dots));
+    const full = Math.floor(clamped);
+    const partial = clamped - full;
+
+    return (
+      <div className="flex gap-1">
+        {Array.from({ length: 10 }).map((_, idx) => {
+          const fill = idx < full ? 1 : idx === full ? partial : 0;
+          return (
+            <span key={idx} className="relative h-2.5 w-4 overflow-hidden rounded-full bg-[#2b3645]">
+              <span
+                className="absolute left-0 top-0 h-full rounded-full bg-cyan-500"
+                style={{ width: `${Math.round(fill * 100)}%` }}
+              />
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (!selectedGymSlug && activeGym?.slug) {
@@ -319,19 +340,18 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
 
           <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
             <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Gym List</h2>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-rows-2 grid-flow-col auto-cols-[clamp(1.5rem,2.1vw,2.2rem)] gap-1 overflow-x-auto pb-1">
               {state.gyms.map((gym) => (
                 <button
                   key={gym.slug}
                   onClick={() => setSelectedGymSlug(gym.slug)}
-                  className={`aspect-square rounded border text-center text-sm font-semibold transition ${
+                  className={`aspect-square min-h-[1.5rem] rounded border text-center text-[10px] font-semibold leading-none transition ${
                     selectedGym?.slug === gym.slug
                       ? 'border-cyan-500 bg-[#203247] text-[#e6f7ff]'
                       : 'border-[#344257] bg-[#1a2432] text-[#c9d6e8] hover:bg-[#223248]'
                   }`}
                 >
-                  <div className="text-lg">{getGymInitials(gym.displayName)}</div>
-                  <div className="mt-1 text-[10px]">{gym.unlocked ? 'Unlocked' : 'Locked'}</div>
+                  <div className="pt-1 text-[10px]">{getGymInitials(gym.displayName)}</div>
                 </button>
               ))}
             </div>
@@ -375,12 +395,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                   ] as Array<[string, number]>).map(([label, dots]) => (
                     <div key={label}>
                       <div className="mb-1 flex justify-between"><span>{label}</span></div>
-                      <div className="h-2 rounded bg-[#2b3645]">
-                        <div
-                          className="h-2 rounded bg-cyan-500"
-                          style={{ width: `${Math.max(0, Math.min(100, (dots / 10) * 100))}%` }}
-                        />
-                      </div>
+                      {renderDotPills(dots)}
                     </div>
                   ))}
                 </div>

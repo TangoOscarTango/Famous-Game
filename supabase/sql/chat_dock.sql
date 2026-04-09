@@ -19,8 +19,8 @@ insert into public.chat_channels (
   max_length, cooldown_seconds, rate_limit_count, rate_limit_window_seconds, duplicate_window_seconds
 )
 values
-  ('global', 'Global', 1, true, 280, 2, 5, 20, 45),
-  ('trade', 'Trade', 2, true, 280, 1, 6, 20, 60)
+  ('global', 'Global', 1, true, 280, 10, 5, 20, 45),
+  ('trade', 'Trade', 2, true, 280, 6, 6, 20, 60)
 on conflict (slug) do update
 set display_name = excluded.display_name,
     sort_order = excluded.sort_order,

@@ -86,6 +86,17 @@ do $$
 begin
   if not exists (
     select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'vox_city_profiles'
+      and column_name = 'active_gym'
+  ) then
+    alter table public.vox_city_profiles
+      add column active_gym text not null default 'scrap-yard-gym';
+  end if;
+
+  if not exists (
+    select 1
     from pg_constraint
     where conname = 'vox_city_profiles_active_gym_fkey'
   ) then
@@ -379,7 +390,6 @@ declare
   v_success_chance double precision;
   v_exceptional_chance double precision;
   v_outcome text;
-  v_energy_cost integer;
   v_nerve_cost integer;
   v_summary text;
   v_scrap integer;
@@ -389,6 +399,8 @@ declare
   v_target_order integer;
   v_required_prev_slug text;
   v_wallet_balance bigint;
+  v_vital text;
+  v_amount integer;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'Unauthorized';
@@ -500,7 +512,7 @@ begin
     end loop;
 
     if v_trains_done = 0 then
-      raise exception 'Not enough Energy.';
+      raise exception 'Not enough Stamina.';
     end if;
 
     v_notice := format('Training complete: %s train(s), +%s total gain.', v_trains_done, round(v_total_gain::numeric, 4));
@@ -631,7 +643,7 @@ begin
 
   elsif p_action = 'class' then
     if v_profile.energy < 8 or v_profile.happy < 5 then
-      raise exception 'Need at least 8 Energy and 5 Happy.';
+      raise exception 'Need at least 8 Stamina and 5 Morale.';
     end if;
 
     v_profile.college_classes := v_profile.college_classes + 1;
@@ -643,13 +655,11 @@ begin
     v_approach := lower(coalesce(p_payload ->> 'approach', ''));
 
     if v_approach = 'careful' then
-      v_energy_cost := 4;
       v_nerve_cost := 2;
       v_fail_chance := 0.14;
       v_partial_chance := 0.46;
       v_success_chance := 0.34;
     elsif v_approach = 'quick' then
-      v_energy_cost := 3;
       v_nerve_cost := 3;
       v_fail_chance := 0.24;
       v_partial_chance := 0.34;
@@ -658,7 +668,6 @@ begin
       if v_profile.scavenging_skill < 25 then
         raise exception 'Deep Dig unlocks at Scavenging 25.';
       end if;
-      v_energy_cost := 6;
       v_nerve_cost := 4;
       v_fail_chance := 0.36;
       v_partial_chance := 0.24;
@@ -667,11 +676,10 @@ begin
       raise exception 'Invalid approach.';
     end if;
 
-    if v_profile.energy < v_energy_cost or v_profile.nerve < v_nerve_cost then
-      raise exception 'Insufficient Energy or Nerve.';
+    if v_profile.nerve < v_nerve_cost then
+      raise exception 'Insufficient Instinct.';
     end if;
 
-    v_profile.energy := greatest(0, v_profile.energy - v_energy_cost);
     v_profile.nerve := greatest(0, v_profile.nerve - v_nerve_cost);
 
     v_skill_bonus := least(0.2, v_profile.scavenging_skill / 250.0);
@@ -745,6 +753,34 @@ begin
     end if;
 
     v_notice := format('%s: %s', initcap(v_approach), v_summary);
+
+  elsif p_action = 'dev_restore_vital' then
+    if not coalesce(v_is_dev, false) then
+      raise exception 'Not allowed.';
+    end if;
+
+    v_vital := lower(coalesce(p_payload ->> 'vital', ''));
+    v_amount := greatest(0, coalesce((p_payload ->> 'amount')::integer, 0));
+
+    if v_amount <= 0 then
+      raise exception 'Amount must be greater than zero.';
+    end if;
+
+    if v_vital = 'life' then
+      v_profile.life := least(v_profile.max_life, v_profile.life + v_amount);
+      v_notice := format('Life restored by %s.', v_amount);
+    elsif v_vital = 'stamina' then
+      v_profile.energy := least(v_profile.max_energy, v_profile.energy + v_amount);
+      v_notice := format('Stamina restored by %s.', v_amount);
+    elsif v_vital = 'instinct' then
+      v_profile.nerve := least(v_profile.max_nerve, v_profile.nerve + v_amount);
+      v_notice := format('Instinct restored by %s.', v_amount);
+    elsif v_vital = 'morale' then
+      v_profile.happy := least(v_profile.max_happy, v_profile.happy + v_amount);
+      v_notice := format('Morale restored by %s.', v_amount);
+    else
+      raise exception 'Invalid vital.';
+    end if;
 
   elsif p_action = 'dev_refill' then
     if not coalesce(v_is_dev, false) then

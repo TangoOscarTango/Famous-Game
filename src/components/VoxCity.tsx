@@ -130,6 +130,12 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('City systems online.');
   const [trainingTrains, setTrainingTrains] = useState<number>(1);
+  const [devRestore, setDevRestore] = useState({
+    life: 10,
+    stamina: 10,
+    instinct: 1,
+    morale: 5,
+  });
 
   const zonesUnlocked = useMemo(
     () => [
@@ -310,7 +316,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
           <div className="mb-3 grid gap-2 sm:grid-cols-2">
             <div className="rounded border border-[#344257] bg-[#1a2432] px-2 py-2 text-xs text-[#c6d5e8]">
               Active Gym: <span className="font-semibold text-[#eef2f8]">{activeGym?.displayName ?? 'None'}</span>
-              <div className="text-[#90a2bb]">{activeGym?.energyPerTrain ?? 5} Energy per train</div>
+              <div className="text-[#90a2bb]">{activeGym?.energyPerTrain ?? 5} Stamina per train</div>
             </div>
             <label className="text-xs text-[#9aacc3]">
               Train count
@@ -340,7 +346,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
         <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
           <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Academy</h2>
           <p>Classes completed: <span className="font-semibold">{state.collegeClasses}</span></p>
-          <button disabled={busy} onClick={() => void runAction('class')} className="mt-3 rounded border border-[#3c4a5d] bg-[#1a2432] px-3 py-2 hover:bg-[#213046] disabled:opacity-60">Take Class (8 Energy, 5 Happy)</button>
+          <button disabled={busy} onClick={() => void runAction('class')} className="mt-3 rounded border border-[#3c4a5d] bg-[#1a2432] px-3 py-2 hover:bg-[#213046] disabled:opacity-60">Take Class (8 Stamina, 5 Morale)</button>
         </div>
       );
     }
@@ -399,20 +405,39 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               <span className="rounded border border-[#334358] bg-[#1a2432] px-2 py-1 text-xs">{user.displayName}</span>
 
               {state.isDev && (
-                <button
-                  disabled={busy}
-                  onClick={() => void runAction('dev_refill')}
-                  className="rounded border border-[#684e2b] bg-[#3d2d18] px-2 py-1 text-xs text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
-                >
-                  Dev: Restore Vitals
-                </button>
+                <div className="flex flex-wrap items-center gap-1 rounded border border-[#5a4325] bg-[#2b2013] px-2 py-1">
+                  {(['life', 'stamina', 'instinct', 'morale'] as const).map((vital) => (
+                    <div key={vital} className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        max={99999}
+                        value={devRestore[vital]}
+                        onChange={(e) =>
+                          setDevRestore((prev) => ({
+                            ...prev,
+                            [vital]: Math.max(1, Math.min(99999, Number(e.target.value) || 1)),
+                          }))
+                        }
+                        className="w-14 rounded border border-[#6a5537] bg-[#1d140a] px-1 py-0.5 text-[11px] text-[#f6ddb6]"
+                      />
+                      <button
+                        disabled={busy}
+                        onClick={() => void runAction('dev_restore_vital', { vital, amount: devRestore[vital] })}
+                        className="rounded border border-[#684e2b] bg-[#3d2d18] px-1.5 py-0.5 text-[11px] text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
+                      >
+                        +{vital}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
 
               <div className="ml-auto flex flex-wrap gap-2 text-xs">
                 <span className="rounded border border-[#4a3940] bg-[#2a1d22] px-2 py-1">Life {state.resources.life}/{state.resources.maxLife}</span>
-                <span className="rounded border border-[#35506c] bg-[#1a2a3a] px-2 py-1">Energy {state.resources.energy}/{state.resources.maxEnergy}</span>
-                <span className="rounded border border-[#3f5c35] bg-[#1e3121] px-2 py-1">Nerve {state.resources.nerve}/{state.resources.maxNerve}</span>
-                <span className="rounded border border-[#6a5a2f] bg-[#352d1b] px-2 py-1">Happy {state.resources.happy}/{state.resources.maxHappy}</span>
+                <span className="rounded border border-[#35506c] bg-[#1a2a3a] px-2 py-1">Stamina {state.resources.energy}/{state.resources.maxEnergy}</span>
+                <span className="rounded border border-[#3f5c35] bg-[#1e3121] px-2 py-1">Instinct {state.resources.nerve}/{state.resources.maxNerve}</span>
+                <span className="rounded border border-[#6a5a2f] bg-[#352d1b] px-2 py-1">Morale {state.resources.happy}/{state.resources.maxHappy}</span>
               </div>
             </div>
 

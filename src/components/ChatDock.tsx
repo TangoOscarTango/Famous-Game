@@ -164,26 +164,14 @@ const ChatDock: React.FC = () => {
     setSending(true);
     setStatusText('');
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-
-    const { error } = await supabase.functions.invoke('chat-dock-send', {
-      body: { channelSlug: activeChannel, message: text },
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    const { error } = await supabase.rpc('chat_send_message', {
+      p_user_id: user.id,
+      p_channel_slug: activeChannel,
+      p_body: text,
     });
 
     if (error) {
-      let msg = error.message || 'Send failed.';
-      try {
-        const raw = await error.context?.text?.();
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          msg = parsed?.error || msg;
-        }
-      } catch {
-        // ignore parse issues
-      }
-      setStatusText(msg);
+      setStatusText(error.message || 'Send failed.');
       setSending(false);
       return;
     }

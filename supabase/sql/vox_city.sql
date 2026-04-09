@@ -4,6 +4,10 @@ alter table public.user_profiles
   add column if not exists user_type text not null default 'player'
   check (user_type in ('player', 'dev'));
 
+alter table public.user_profiles
+  add column if not exists gender text not null default 'male'
+  check (gender in ('male', 'female'));
+
 create table if not exists public.vox_city_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   blood_type text not null check (blood_type in ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
@@ -29,6 +33,7 @@ create table if not exists public.vox_city_profiles (
   scrap integer not null default 0,
   components integer not null default 0,
   rare_tech integer not null default 0,
+  vox_points integer not null default 0,
   inventory_items jsonb not null default '[]'::jsonb,
   crime_log jsonb not null default '[]'::jsonb,
   medical_cooldown_seconds integer not null default 0,
@@ -39,8 +44,66 @@ create table if not exists public.vox_city_profiles (
   regen_nerve_at timestamptz not null default now(),
   regen_happy_at timestamptz not null default now(),
   morale_reset_checked_at timestamptz not null default now(),
+  academy_active_course_slug text,
+  academy_started_at timestamptz,
   regen_life_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.vox_city_courses (
+  slug text primary key,
+  major text not null,
+  major_order integer not null,
+  course_order integer not null,
+  display_name text not null,
+  duration_seconds integer not null check (duration_seconds > 0),
+  bonus_text text not null
+);
+
+create table if not exists public.vox_city_course_completions (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  course_slug text not null references public.vox_city_courses(slug) on delete cascade,
+  completed_at timestamptz not null default now(),
+  primary key (user_id, course_slug)
+);
+
+create table if not exists public.vox_exchange_unlocks (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  unlock_slug text not null,
+  unlocked_at timestamptz not null default now(),
+  primary key (user_id, unlock_slug)
+);
+
+create table if not exists public.market_stocks (
+  slug text primary key,
+  display_name text not null,
+  min_price_fp numeric(18,8) not null,
+  max_price_fp numeric(18,8) not null,
+  current_price_fp numeric(18,8) not null,
+  last_change_pct numeric(10,6) not null default 0,
+  block_size integer not null default 1,
+  benefits jsonb not null default '[]'::jsonb,
+  last_price_update_at timestamptz not null default now()
+);
+
+create table if not exists public.market_holdings (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  stock_slug text not null references public.market_stocks(slug) on delete cascade,
+  shares numeric(24,6) not null default 0,
+  primary key (user_id, stock_slug)
+);
+
+create table if not exists public.market_benefit_claims (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  stock_slug text not null references public.market_stocks(slug) on delete cascade,
+  benefit_key text not null,
+  last_claimed_at timestamptz,
+  primary key (user_id, stock_slug, benefit_key)
+);
+
+create table if not exists public.vox_city_global_state (
+  key text primary key,
+  fp_value bigint not null default 0
 );
 
 create table if not exists public.vox_city_gyms (
@@ -88,6 +151,73 @@ set display_name = excluded.display_name,
     dot_instinct_combat = excluded.dot_instinct_combat,
     dot_grit = excluded.dot_grit;
 
+insert into public.vox_city_courses (slug, major, major_order, course_order, display_name, duration_seconds, bonus_text)
+values
+  ('survival-waste-foraging','Survival Studies',1,1,'Waste Foraging',43200,'+1% item find chance from scavenging crimes'),
+  ('survival-ruin-navigation','Survival Studies',1,2,'Ruin Navigation',172800,'+1% success chance on scavenging crimes'),
+  ('survival-field-dressing','Survival Studies',1,3,'Field Dressing',64800,'+1% effectiveness from medical items'),
+  ('survival-bunker-tracking','Survival Studies',1,4,'Bunker Tracking',172800,'+15% hunting / tracking effectiveness'),
+  ('survival-apex','Survival Studies',1,5,'Apex Survival',518400,'+2% defense'),
+  ('combat-basics','Combat Doctrine',2,1,'Urban Combat Basics',43200,'+1% Agility'),
+  ('combat-sidearm','Combat Doctrine',2,2,'Sidearm Handling',172800,'+1 accuracy with pistol-class weapons'),
+  ('combat-rifle','Combat Doctrine',2,3,'Rifle Handling',64800,'+1 accuracy with rifle-class weapons'),
+  ('combat-heavy','Combat Doctrine',2,4,'Heavy Weapons Handling',172800,'+1 accuracy with heavy weapons'),
+  ('combat-mastery','Combat Doctrine',2,5,'Combat Mastery',518400,'Unlock weapon experience system'),
+  ('commerce-intro','Street Commerce',3,1,'Intro to Commerce',43200,'Prerequisite course'),
+  ('commerce-logistics','Street Commerce',3,2,'Pack Logistics',172800,'+2% business productivity'),
+  ('commerce-advertising','Street Commerce',3,3,'Vox Advertising',64800,'Increased advertising effectiveness'),
+  ('commerce-pricing','Street Commerce',3,4,'Pricing Strategy',172800,'+5% perceived product value'),
+  ('commerce-workforce','Street Commerce',3,5,'Workforce Coordination',518400,'Passive boost to employee working stats'),
+  ('tech-identification','Tech Salvaging',4,1,'Scrap Identification',43200,'+1% rare item find chance'),
+  ('tech-circuit-recovery','Tech Salvaging',4,2,'Circuit Recovery',172800,'+1% effectiveness from tech-based items'),
+  ('tech-servicing','Tech Salvaging',4,3,'Weapon Servicing',64800,'+1 accuracy with tech-based weapons'),
+  ('tech-power-systems','Tech Salvaging',4,4,'Power Systems',172800,'+2% damage with tech-based weapons'),
+  ('tech-pre-fall-engineering','Tech Salvaging',4,5,'Pre-Fall Engineering',518400,'+1% success chance for tech-based crimes'),
+  ('general-intro','General Survival Theory',5,1,'General Survival Intro',43200,'Prerequisite course'),
+  ('general-throwables','General Survival Theory',5,2,'Improvised Throwables',172800,'+1 accuracy with temporary weapons'),
+  ('general-chemistry','General Survival Theory',5,3,'Volatile Chemistry',64800,'+5% temporary weapon damage'),
+  ('general-tracking','General Survival Theory',5,4,'Tracking Techniques',172800,'+15% hunting effectiveness'),
+  ('general-discipline','General Survival Theory',5,5,'Learning Discipline',518400,'+10% working stat gains for future education completions')
+on conflict (slug) do update
+set major = excluded.major,
+    major_order = excluded.major_order,
+    course_order = excluded.course_order,
+    display_name = excluded.display_name,
+    duration_seconds = excluded.duration_seconds,
+    bonus_text = excluded.bonus_text;
+
+insert into public.market_stocks (slug, display_name, min_price_fp, max_price_fp, current_price_fp, block_size, benefits)
+values
+  (
+    'gridpower',
+    'GridPower',
+    0.01000000,
+    1.00000000,
+    0.10000000,
+    6000,
+    '[{"key":"gridpower-energy-weekly","sharesRequired":6000,"cooldownSeconds":604800,"rewardType":"energy","rewardValue":100}]'::jsonb
+  ),
+  (
+    'voxmedia',
+    'VoxMedia',
+    0.00050000,
+    0.00500000,
+    0.00100000,
+    10000000,
+    '[{"key":"voxmedia-oed-weekly","sharesRequired":10000000,"cooldownSeconds":604800,"rewardType":"item","rewardItem":"Outmine Entertainment Disk (OED)","rewardQuantity":1}]'::jsonb
+  )
+on conflict (slug) do update
+set display_name = excluded.display_name,
+    min_price_fp = excluded.min_price_fp,
+    max_price_fp = excluded.max_price_fp,
+    current_price_fp = excluded.current_price_fp,
+    block_size = excluded.block_size,
+    benefits = excluded.benefits;
+
+insert into public.vox_city_global_state (key, fp_value)
+values ('global_treasury_fp', 0)
+on conflict (key) do nothing;
+
 do $$
 begin
   if not exists (
@@ -128,17 +258,27 @@ alter table public.vox_city_profiles
   add column if not exists gym_agility double precision not null default 1,
   add column if not exists gym_instinct_combat double precision not null default 1,
   add column if not exists gym_grit double precision not null default 1,
+  add column if not exists vox_points integer not null default 0,
   add column if not exists inventory_items jsonb not null default '[]'::jsonb,
   add column if not exists medical_cooldown_seconds integer not null default 0,
   add column if not exists booster_cooldown_seconds integer not null default 0,
   add column if not exists drug_cooldown_seconds integer not null default 0,
   add column if not exists last_cooldown_processed_at timestamptz not null default now(),
   add column if not exists morale_reset_checked_at timestamptz not null default now(),
+  add column if not exists academy_active_course_slug text,
+  add column if not exists academy_started_at timestamptz,
   add column if not exists active_gym text not null default 'scrap-yard-gym';
 
 alter table public.vox_city_profiles enable row level security;
 alter table public.vox_city_gym_unlocks enable row level security;
 alter table public.vox_city_gyms enable row level security;
+alter table public.vox_city_courses enable row level security;
+alter table public.vox_city_course_completions enable row level security;
+alter table public.vox_exchange_unlocks enable row level security;
+alter table public.market_stocks enable row level security;
+alter table public.market_holdings enable row level security;
+alter table public.market_benefit_claims enable row level security;
+alter table public.vox_city_global_state enable row level security;
 
 drop policy if exists "vox_city_owner_select" on public.vox_city_profiles;
 drop policy if exists "vox_city_owner_update" on public.vox_city_profiles;
@@ -146,6 +286,17 @@ drop policy if exists "vox_city_owner_insert" on public.vox_city_profiles;
 drop policy if exists "vox_city_gyms_read" on public.vox_city_gyms;
 drop policy if exists "vox_city_unlocks_owner_select" on public.vox_city_gym_unlocks;
 drop policy if exists "vox_city_unlocks_no_client_write" on public.vox_city_gym_unlocks;
+drop policy if exists "vox_city_courses_read" on public.vox_city_courses;
+drop policy if exists "vox_city_course_completions_owner_read" on public.vox_city_course_completions;
+drop policy if exists "vox_city_course_completions_no_client_write" on public.vox_city_course_completions;
+drop policy if exists "vox_exchange_unlocks_owner_read" on public.vox_exchange_unlocks;
+drop policy if exists "vox_exchange_unlocks_no_client_write" on public.vox_exchange_unlocks;
+drop policy if exists "market_stocks_read" on public.market_stocks;
+drop policy if exists "market_holdings_owner_read" on public.market_holdings;
+drop policy if exists "market_holdings_no_client_write" on public.market_holdings;
+drop policy if exists "market_benefit_claims_owner_read" on public.market_benefit_claims;
+drop policy if exists "market_benefit_claims_no_client_write" on public.market_benefit_claims;
+drop policy if exists "vox_city_global_state_read" on public.vox_city_global_state;
 
 create policy "vox_city_owner_select"
 on public.vox_city_profiles
@@ -179,6 +330,116 @@ for all
 using (false)
 with check (false);
 
+create policy "vox_city_courses_read"
+on public.vox_city_courses
+for select
+using (true);
+
+create policy "vox_city_course_completions_owner_read"
+on public.vox_city_course_completions
+for select
+using (auth.uid() = user_id);
+
+create policy "vox_city_course_completions_no_client_write"
+on public.vox_city_course_completions
+for all
+using (false)
+with check (false);
+
+create policy "vox_exchange_unlocks_owner_read"
+on public.vox_exchange_unlocks
+for select
+using (auth.uid() = user_id);
+
+create policy "vox_exchange_unlocks_no_client_write"
+on public.vox_exchange_unlocks
+for all
+using (false)
+with check (false);
+
+create policy "market_stocks_read"
+on public.market_stocks
+for select
+using (true);
+
+create policy "market_holdings_owner_read"
+on public.market_holdings
+for select
+using (auth.uid() = user_id);
+
+create policy "market_holdings_no_client_write"
+on public.market_holdings
+for all
+using (false)
+with check (false);
+
+create policy "market_benefit_claims_owner_read"
+on public.market_benefit_claims
+for select
+using (auth.uid() = user_id);
+
+create policy "market_benefit_claims_no_client_write"
+on public.market_benefit_claims
+for all
+using (false)
+with check (false);
+
+create policy "vox_city_global_state_read"
+on public.vox_city_global_state
+for select
+using (true);
+
+create or replace function public.market_refresh_prices()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_now timestamptz := now();
+  v_hours integer;
+  v_i integer;
+  v_change numeric;
+begin
+  for v_i in 1..(select count(*) from public.market_stocks) loop
+    update public.market_stocks s
+      set current_price_fp = (
+            with calc as (
+              select s.current_price_fp as cur,
+                     s.min_price_fp as minp,
+                     s.max_price_fp as maxp,
+                     greatest(0, floor(extract(epoch from (v_now - s.last_price_update_at)) / 3600)::int) as hrs
+            )
+            select
+              case
+                when hrs <= 0 then cur
+                else (
+                  select greatest(minp, least(maxp, np))
+                  from (
+                    select cur * exp(sum(ln(1 + ((random() * 0.04) - 0.02)))) as np
+                    from generate_series(1, hrs)
+                  ) q
+                )
+              end
+            from calc
+          ),
+          last_change_pct = ((random() * 0.04) - 0.02),
+          last_price_update_at = case
+            when floor(extract(epoch from (v_now - s.last_price_update_at)) / 3600)::int > 0
+              then date_trunc('hour', v_now)
+            else s.last_price_update_at
+          end
+    where s.slug = (
+      select slug
+      from public.market_stocks
+      order by slug
+      offset v_i - 1
+      limit 1
+    );
+  end loop;
+end;
+$$;
+
 create or replace function public.vox_city_get_state(
   p_user_id uuid
 )
@@ -198,8 +459,13 @@ declare
   v_life_ticks integer;
   v_life_gain integer;
   v_is_dev boolean := false;
+  v_gender text := 'male';
   v_gyms jsonb := '[]'::jsonb;
   v_inventory_items jsonb := '[]'::jsonb;
+  v_academy jsonb := '{}'::jsonb;
+  v_exchange jsonb := '{}'::jsonb;
+  v_market jsonb := '{}'::jsonb;
+  v_treasury_fp bigint := 0;
   v_profile public.vox_city_profiles%rowtype;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
@@ -255,6 +521,22 @@ begin
     v_profile.morale_reset_checked_at := v_quarter_floor;
   end if;
 
+  if v_profile.academy_active_course_slug is not null and v_profile.academy_started_at is not null then
+    if exists (
+      select 1
+      from public.vox_city_courses c
+      where c.slug = v_profile.academy_active_course_slug
+        and v_now >= v_profile.academy_started_at + make_interval(secs => c.duration_seconds)
+    ) then
+      insert into public.vox_city_course_completions (user_id, course_slug, completed_at)
+      values (p_user_id, v_profile.academy_active_course_slug, v_now)
+      on conflict (user_id, course_slug) do nothing;
+      v_profile.academy_active_course_slug := null;
+      v_profile.academy_started_at := null;
+      v_profile.vox_points := v_profile.vox_points + 1;
+    end if;
+  end if;
+
   v_energy_ticks := floor(extract(epoch from (v_now - v_profile.regen_energy_at)) / 300);
   if v_energy_ticks > 0 then
     if v_profile.energy < v_profile.max_energy then
@@ -288,6 +570,7 @@ begin
     set energy = v_profile.energy,
         nerve = v_profile.nerve,
         happy = v_profile.happy,
+        vox_points = v_profile.vox_points,
         life = v_profile.life,
         regen_energy_at = v_profile.regen_energy_at,
         regen_nerve_at = v_profile.regen_nerve_at,
@@ -297,6 +580,8 @@ begin
         drug_cooldown_seconds = v_profile.drug_cooldown_seconds,
         last_cooldown_processed_at = v_profile.last_cooldown_processed_at,
         morale_reset_checked_at = v_profile.morale_reset_checked_at,
+        academy_active_course_slug = v_profile.academy_active_course_slug,
+        academy_started_at = v_profile.academy_started_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,
         updated_at = now()
@@ -336,6 +621,81 @@ begin
   from public.user_profiles up
   where up.user_id = p_user_id;
 
+  select coalesce(up.gender, 'male')
+    into v_gender
+  from public.user_profiles up
+  where up.user_id = p_user_id;
+
+  perform public.market_refresh_prices();
+
+  select coalesce(fp_value, 0)
+    into v_treasury_fp
+  from public.vox_city_global_state
+  where key = 'global_treasury_fp';
+
+  select jsonb_build_object(
+    'activeCourseSlug', v_profile.academy_active_course_slug,
+    'startedAt', v_profile.academy_started_at,
+    'courses', (
+      select coalesce(jsonb_agg(
+        jsonb_build_object(
+          'slug', c.slug,
+          'major', c.major,
+          'majorOrder', c.major_order,
+          'courseOrder', c.course_order,
+          'displayName', c.display_name,
+          'durationSeconds', c.duration_seconds,
+          'bonus', c.bonus_text,
+          'completed', (cc.course_slug is not null),
+          'inProgress', (v_profile.academy_active_course_slug = c.slug)
+        )
+        order by c.major_order, c.course_order
+      ), '[]'::jsonb)
+      from public.vox_city_courses c
+      left join public.vox_city_course_completions cc
+        on cc.course_slug = c.slug
+       and cc.user_id = p_user_id
+    )
+  ) into v_academy;
+
+  select jsonb_build_object(
+    'voxPoints', v_profile.vox_points,
+    'unlocks', (
+      select coalesce(jsonb_agg(jsonb_build_object('slug', unlock_slug, 'unlockedAt', unlocked_at)), '[]'::jsonb)
+      from public.vox_exchange_unlocks
+      where user_id = p_user_id
+    ),
+    'catalog', jsonb_build_array(
+      jsonb_build_object('slug', 'market-grid-access', 'name', 'Market Grid Access', 'costPoints', 25),
+      jsonb_build_object('slug', 'name-change', 'name', 'Name Change', 'costPoints', 50),
+      jsonb_build_object('slug', 'cosmetic-upgrade', 'name', 'Cosmetic Upgrade', 'costPoints', 35)
+    )
+  ) into v_exchange;
+
+  select jsonb_build_object(
+    'stocks', (
+      select coalesce(jsonb_agg(
+        jsonb_build_object(
+          'slug', s.slug,
+          'name', s.display_name,
+          'currentPriceFp', s.current_price_fp,
+          'minPriceFp', s.min_price_fp,
+          'maxPriceFp', s.max_price_fp,
+          'lastChangePct', s.last_change_pct,
+          'blockSize', s.block_size,
+          'benefits', s.benefits,
+          'sharesOwned', coalesce(h.shares, 0)
+        )
+        order by s.slug
+      ), '[]'::jsonb)
+      from public.market_stocks s
+      left join public.market_holdings h
+        on h.stock_slug = s.slug
+       and h.user_id = p_user_id
+    ),
+    'treasuryFp', v_treasury_fp
+  ) into v_market;
+
   return jsonb_build_object(
     'battle', jsonb_build_object(
       'ferocity', v_profile.ferocity,
@@ -362,6 +722,7 @@ begin
       'rareTech', v_profile.rare_tech
     ),
     'inventoryItems', v_inventory_items,
+    'gender', v_gender,
     'cooldowns', jsonb_build_object(
       'medicalSeconds', v_profile.medical_cooldown_seconds,
       'medicalMaxSeconds', 21600,
@@ -371,6 +732,9 @@ begin
     ),
     'crimeLog', coalesce(v_profile.crime_log, '[]'::jsonb),
     'isDev', coalesce(v_is_dev, false),
+    'academy', v_academy,
+    'exchange', v_exchange,
+    'market', v_market,
     'activeGym', v_profile.active_gym,
     'gyms', v_gyms
   );
@@ -453,6 +817,26 @@ declare
   v_item_cooldown_add_seconds integer := 0;
   v_item_energy_boost integer := 0;
   v_item_life_boost integer := 0;
+  v_market_stock_slug text;
+  v_market_amount_fp numeric(18,8);
+  v_market_shares numeric(24,6);
+  v_market_price numeric(18,8);
+  v_market_fee numeric(18,8);
+  v_market_tx_amount numeric(18,8);
+  v_market_current_shares numeric(24,6);
+  v_market_benefit jsonb;
+  v_market_benefit_key text;
+  v_market_benefit_shares numeric(24,6);
+  v_market_benefit_cd integer;
+  v_market_last_claim timestamptz;
+  v_exchange_unlock_slug text;
+  v_exchange_cost integer;
+  v_course_slug text;
+  v_course_major_order integer;
+  v_course_order integer;
+  v_prev_course_slug text;
+  v_course_duration integer;
+  v_treasury_value bigint;
   v_skill_gain integer := 0;
   v_fail_text text;
   v_common_items text[] := array[
@@ -472,8 +856,7 @@ declare
     'Blackmarket Sweet Tab','Neon Bliss Capsule','Foxfire Infusion Vial','Dreamdust Candy','Overcharge Chew'
   ];
   v_candy_rare_items text[] := array[
-    'Pre-Fall Candy Tin','Royal Fox Feast Box','Vixenvox Festival Treat','Pack Celebration Bundle',
-    'Outmine Entertainment Disk (OED)'
+    'Pre-Fall Candy Tin','Royal Fox Feast Box','Vixenvox Festival Treat','Pack Celebration Bundle'
   ];
   v_consumable_items text[] := array[
     'Patch Tape Roll','Basic Med Gel','Ration Pack','Dirty Water Flask',
@@ -1150,7 +1533,7 @@ begin
     elsif v_item_cooldown_type = 'booster' and v_profile.booster_cooldown_seconds > 86400 then
       raise exception 'Booster cooldown is too high. Wait before using another booster item.';
     elsif v_item_cooldown_type = 'drug' and v_profile.drug_cooldown_seconds > 0 then
-      raise exception 'Drug cooldown active. You cannot use another stimulant yet.';
+      raise exception 'Stimulant cooldown active. You cannot use another stimulant yet.';
     end if;
 
     if v_item_name = 'Dreamdust Candy' and random() < 0.35 then
@@ -1232,7 +1615,7 @@ begin
           'name', v_item_name,
           'category', 'morale',
           'quantity', 1,
-          'moraleBoost', 100,
+          'moraleBoost', 2500,
           'energyBoost', 0,
           'lifeBoost', 0,
           'cooldownType', 'booster',
@@ -1244,6 +1627,292 @@ begin
     end if;
 
     v_notice := 'Added 1 Outmine Entertainment Disk (OED) to inventory.';
+
+  elsif p_action = 'dev_reset_cooldowns' then
+    if not coalesce(v_is_dev, false) then
+      raise exception 'Not allowed.';
+    end if;
+    v_profile.medical_cooldown_seconds := 0;
+    v_profile.booster_cooldown_seconds := 0;
+    v_profile.drug_cooldown_seconds := 0;
+    v_profile.last_cooldown_processed_at := v_now;
+    v_notice := 'All cooldowns reset to zero.';
+
+  elsif p_action = 'academy_enroll' then
+    v_course_slug := lower(coalesce(p_payload ->> 'courseSlug', ''));
+    if v_course_slug = '' then
+      raise exception 'Missing course slug.';
+    end if;
+    if v_profile.academy_active_course_slug is not null then
+      raise exception 'Another Academy course is already in progress.';
+    end if;
+
+    select major_order, course_order, duration_seconds
+      into v_course_major_order, v_course_order, v_course_duration
+    from public.vox_city_courses
+    where slug = v_course_slug;
+
+    if v_course_major_order is null then
+      raise exception 'Invalid course.';
+    end if;
+
+    if exists (
+      select 1 from public.vox_city_course_completions
+      where user_id = p_user_id and course_slug = v_course_slug
+    ) then
+      raise exception 'Course already completed.';
+    end if;
+
+    if v_course_order > 1 then
+      select slug
+        into v_prev_course_slug
+      from public.vox_city_courses
+      where major_order = v_course_major_order
+        and course_order = v_course_order - 1;
+      if not exists (
+        select 1 from public.vox_city_course_completions
+        where user_id = p_user_id and course_slug = v_prev_course_slug
+      ) then
+        raise exception 'Complete the previous course in this major first.';
+      end if;
+    end if;
+
+    v_profile.academy_active_course_slug := v_course_slug;
+    v_profile.academy_started_at := v_now;
+    v_notice := 'Academy course started.';
+
+  elsif p_action = 'exchange_purchase' then
+    v_exchange_unlock_slug := lower(coalesce(p_payload ->> 'unlockSlug', ''));
+    if v_exchange_unlock_slug = 'market-grid-access' then
+      v_exchange_cost := 25;
+    elsif v_exchange_unlock_slug = 'name-change' then
+      v_exchange_cost := 50;
+    elsif v_exchange_unlock_slug = 'cosmetic-upgrade' then
+      v_exchange_cost := 35;
+    else
+      raise exception 'Invalid Exchange unlock.';
+    end if;
+
+    if exists (
+      select 1 from public.vox_exchange_unlocks
+      where user_id = p_user_id and unlock_slug = v_exchange_unlock_slug
+    ) then
+      raise exception 'Unlock already purchased.';
+    end if;
+
+    if v_profile.vox_points < v_exchange_cost then
+      raise exception 'Not enough Vox Points.';
+    end if;
+
+    v_profile.vox_points := v_profile.vox_points - v_exchange_cost;
+    insert into public.vox_exchange_unlocks (user_id, unlock_slug, unlocked_at)
+    values (p_user_id, v_exchange_unlock_slug, v_now);
+    v_notice := 'Vox Exchange unlock purchased.';
+
+  elsif p_action = 'market_buy' then
+    v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
+    v_market_amount_fp := coalesce((p_payload ->> 'amountFp')::numeric, 0);
+    if v_market_stock_slug = '' or v_market_amount_fp <= 0 then
+      raise exception 'Invalid market buy request.';
+    end if;
+
+    if not exists (
+      select 1 from public.vox_exchange_unlocks
+      where user_id = p_user_id and unlock_slug = 'market-grid-access'
+    ) then
+      raise exception 'Market Grid Access required from Vox Exchange.';
+    end if;
+
+    select current_price_fp
+      into v_market_price
+    from public.market_stocks
+    where slug = v_market_stock_slug
+    for update;
+    if v_market_price is null then
+      raise exception 'Invalid stock.';
+    end if;
+
+    v_market_fee := round(v_market_amount_fp * 0.005, 8);
+    v_market_tx_amount := v_market_amount_fp + v_market_fee;
+    if v_market_tx_amount <= 0 then
+      raise exception 'Invalid transaction.';
+    end if;
+    insert into public.wallet_profiles (user_id, balance_sats, updated_at)
+    values (p_user_id, 0, now())
+    on conflict (user_id) do nothing;
+
+    if v_wallet_balance is null then
+      select balance_sats
+        into v_wallet_balance
+      from public.wallet_profiles
+      where user_id = p_user_id
+      for update;
+      if v_wallet_balance is null then
+        v_wallet_balance := 0;
+      end if;
+    end if;
+    if v_wallet_balance < ceil(v_market_tx_amount)::bigint then
+      raise exception 'Not enough FP balance.';
+    end if;
+
+    v_market_shares := round((v_market_amount_fp / v_market_price)::numeric, 6);
+    if v_market_shares <= 0 then
+      raise exception 'Amount too small for current stock price.';
+    end if;
+
+    update public.wallet_profiles
+      set balance_sats = balance_sats - ceil(v_market_tx_amount)::bigint,
+          updated_at = now()
+    where user_id = p_user_id;
+
+    insert into public.market_holdings (user_id, stock_slug, shares)
+    values (p_user_id, v_market_stock_slug, v_market_shares)
+    on conflict (user_id, stock_slug) do update
+      set shares = public.market_holdings.shares + excluded.shares;
+
+    insert into public.vox_city_global_state (key, fp_value)
+    values ('global_treasury_fp', ceil(v_market_fee)::bigint)
+    on conflict (key) do update
+      set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
+
+    v_notice := format('Bought %s shares of %s (fee %s FP).', v_market_shares, v_market_stock_slug, v_market_fee);
+
+  elsif p_action = 'market_sell' then
+    v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
+    v_market_shares := coalesce((p_payload ->> 'shares')::numeric, 0);
+    if v_market_stock_slug = '' or v_market_shares <= 0 then
+      raise exception 'Invalid market sell request.';
+    end if;
+
+    insert into public.wallet_profiles (user_id, balance_sats, updated_at)
+    values (p_user_id, 0, now())
+    on conflict (user_id) do nothing;
+
+    select current_price_fp
+      into v_market_price
+    from public.market_stocks
+    where slug = v_market_stock_slug
+    for update;
+    if v_market_price is null then
+      raise exception 'Invalid stock.';
+    end if;
+
+    select shares
+      into v_market_current_shares
+    from public.market_holdings
+    where user_id = p_user_id and stock_slug = v_market_stock_slug
+    for update;
+    if v_market_current_shares is null or v_market_current_shares < v_market_shares then
+      raise exception 'Not enough shares to sell.';
+    end if;
+
+    v_market_tx_amount := round(v_market_shares * v_market_price, 8);
+    v_market_fee := round(v_market_tx_amount * 0.005, 8);
+    v_market_amount_fp := greatest(0, v_market_tx_amount - v_market_fee);
+
+    update public.market_holdings
+      set shares = shares - v_market_shares
+    where user_id = p_user_id and stock_slug = v_market_stock_slug;
+
+    delete from public.market_holdings
+    where user_id = p_user_id and stock_slug = v_market_stock_slug and shares <= 0;
+
+    update public.wallet_profiles
+      set balance_sats = balance_sats + floor(v_market_amount_fp)::bigint,
+          updated_at = now()
+    where user_id = p_user_id;
+
+    insert into public.vox_city_global_state (key, fp_value)
+    values ('global_treasury_fp', ceil(v_market_fee)::bigint)
+    on conflict (key) do update
+      set fp_value = public.vox_city_global_state.fp_value + excluded.fp_value;
+
+    v_notice := format('Sold %s shares of %s (fee %s FP).', v_market_shares, v_market_stock_slug, v_market_fee);
+
+  elsif p_action = 'market_claim' then
+    v_market_stock_slug := lower(coalesce(p_payload ->> 'stockSlug', ''));
+    v_market_benefit_key := coalesce(p_payload ->> 'benefitKey', '');
+    if v_market_stock_slug = '' or v_market_benefit_key = '' then
+      raise exception 'Invalid market claim request.';
+    end if;
+
+    select h.shares
+      into v_market_current_shares
+    from public.market_holdings h
+    where h.user_id = p_user_id and h.stock_slug = v_market_stock_slug;
+    if coalesce(v_market_current_shares, 0) <= 0 then
+      raise exception 'No shares owned for this stock.';
+    end if;
+
+    select value
+      into v_market_benefit
+    from public.market_stocks s,
+      lateral jsonb_array_elements(s.benefits) as value
+    where s.slug = v_market_stock_slug
+      and value->>'key' = v_market_benefit_key
+    limit 1;
+    if v_market_benefit is null then
+      raise exception 'Invalid benefit.';
+    end if;
+
+    v_market_benefit_shares := coalesce((v_market_benefit->>'sharesRequired')::numeric, 0);
+    v_market_benefit_cd := coalesce((v_market_benefit->>'cooldownSeconds')::integer, 0);
+    if v_market_current_shares < v_market_benefit_shares then
+      raise exception 'Not enough shares for this block benefit.';
+    end if;
+
+    select last_claimed_at
+      into v_market_last_claim
+    from public.market_benefit_claims
+    where user_id = p_user_id and stock_slug = v_market_stock_slug and benefit_key = v_market_benefit_key;
+    if v_market_last_claim is not null and v_now < v_market_last_claim + make_interval(secs => v_market_benefit_cd) then
+      raise exception 'Benefit is still on cooldown.';
+    end if;
+
+    if coalesce(v_market_benefit->>'rewardType', '') = 'energy' then
+      v_profile.energy := least(1000, v_profile.energy + coalesce((v_market_benefit->>'rewardValue')::integer, 0));
+    elsif coalesce(v_market_benefit->>'rewardType', '') = 'item' then
+      v_item_name := coalesce(v_market_benefit->>'rewardItem', '');
+      v_qty := greatest(1, coalesce((v_market_benefit->>'rewardQuantity')::integer, 1));
+
+      select (j.idx - 1)::integer, j.value
+        into v_item_index, v_existing_item
+      from jsonb_array_elements(coalesce(v_profile.inventory_items, '[]'::jsonb)) with ordinality as j(value, idx)
+      where j.value->>'name' = v_item_name
+      limit 1;
+
+      if found then
+        v_existing_qty := coalesce((v_existing_item->>'quantity')::integer, 0);
+        v_profile.inventory_items := jsonb_set(
+          coalesce(v_profile.inventory_items, '[]'::jsonb),
+          array[v_item_index::text, 'quantity'],
+          to_jsonb(v_existing_qty + v_qty),
+          false
+        );
+      else
+        v_profile.inventory_items := coalesce(v_profile.inventory_items, '[]'::jsonb) || jsonb_build_array(
+          jsonb_build_object(
+            'name', v_item_name,
+            'category', 'morale',
+            'quantity', v_qty,
+            'moraleBoost', 2500,
+            'energyBoost', 0,
+            'lifeBoost', 0,
+            'cooldownType', 'booster',
+            'cooldownAddSeconds', 21600,
+            'rarity', 'Rare',
+            'description', 'Salvaged pre-collapse media disk loaded with old world entertainment.'
+          )
+        );
+      end if;
+    end if;
+
+    insert into public.market_benefit_claims (user_id, stock_slug, benefit_key, last_claimed_at)
+    values (p_user_id, v_market_stock_slug, v_market_benefit_key, v_now)
+    on conflict (user_id, stock_slug, benefit_key) do update
+      set last_claimed_at = excluded.last_claimed_at;
+
+    v_notice := 'Block benefit claimed.';
 
   elsif p_action = 'dev_restore_vital' then
     if not coalesce(v_is_dev, false) then
@@ -1304,6 +1973,7 @@ begin
         max_happy = v_profile.max_happy,
         life = v_profile.life,
         max_life = v_profile.max_life,
+        vox_points = v_profile.vox_points,
         scavenging_skill = v_profile.scavenging_skill,
         college_classes = v_profile.college_classes,
         scrap = v_profile.scrap,
@@ -1319,6 +1989,8 @@ begin
         drug_cooldown_seconds = v_profile.drug_cooldown_seconds,
         last_cooldown_processed_at = v_profile.last_cooldown_processed_at,
         morale_reset_checked_at = v_profile.morale_reset_checked_at,
+        academy_active_course_slug = v_profile.academy_active_course_slug,
+        academy_started_at = v_profile.academy_started_at,
         regen_life_at = v_profile.regen_life_at,
         active_gym = v_profile.active_gym,
         updated_at = now()
@@ -1335,6 +2007,10 @@ grant execute on function public.vox_city_apply_action(uuid, text, jsonb) to aut
 update public.user_profiles set user_type = 'player';
 update public.user_profiles
 set user_type = 'dev'
+where user_id = '9ef0de96-c84d-46fe-a43a-b285d209d5cf';
+
+update public.user_profiles
+set gender = 'female'
 where user_id = '9ef0de96-c84d-46fe-a43a-b285d209d5cf';
 
 -- Normalize old starter rows created before stat defaults changed to 5.

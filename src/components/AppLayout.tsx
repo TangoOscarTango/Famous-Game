@@ -1,7 +1,8 @@
 // TimeQuest App - Mobile-first web application
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { WalletProvider, useWallet } from '@/contexts/WalletContext';
+import { supabase } from '@/lib/supabase';
 import Sidebar from '@/components/Sidebar';
 import AuthModal from '@/components/AuthModal';
 import Dashboard from '@/components/Dashboard';
@@ -13,11 +14,47 @@ import VoxCity from '@/components/VoxCity';
 import ChatDock from '@/components/ChatDock';
 
 const AppContent: React.FC = () => {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
   const { balanceFp } = useWallet();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [globalStatus, setGlobalStatus] = useState<{
+    gender: 'male' | 'female';
+    cooldowns: { medicalSeconds: number; medicalMaxSeconds: number; boosterSeconds: number; boosterMaxSeconds: number; drugSeconds: number };
+  }>({
+    gender: 'male',
+    cooldowns: { medicalSeconds: 0, medicalMaxSeconds: 21600, boosterSeconds: 0, boosterMaxSeconds: 86400, drugSeconds: 0 },
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchStatus = async () => {
+      const { data } = await supabase.rpc('vox_city_get_state', { p_user_id: user.id });
+      if (!data) return;
+      setGlobalStatus({
+        gender: (data as any).gender ?? 'male',
+        cooldowns: (data as any).cooldowns ?? { medicalSeconds: 0, medicalMaxSeconds: 21600, boosterSeconds: 0, boosterMaxSeconds: 86400, drugSeconds: 0 },
+      });
+    };
+    void fetchStatus();
+    const timer = window.setInterval(() => void fetchStatus(), 20000);
+    return () => window.clearInterval(timer);
+  }, [user?.id]);
+
+  const fmt = (seconds: number) => {
+    const s = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  };
+  const heat = (current: number, max: number) => {
+    const p = Math.max(0, Math.min(1, current / Math.max(1, max)));
+    const r = Math.round(64 + p * 191);
+    const g = Math.round(205 - p * 150);
+    return `rgb(${r},${g},90)`;
+  };
 
   if (loading) {
     return (
@@ -128,6 +165,31 @@ const AppContent: React.FC = () => {
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-xs text-gray-400">Online</span>
               </div>
+            </div>
+          </div>
+          <div className="border-t border-gray-800/70 px-4 py-2 sm:px-6">
+            <div className="flex items-center gap-3 text-xs">
+              <span
+                title={globalStatus.gender === 'female' ? 'Female' : 'Male'}
+                style={{ color: globalStatus.gender === 'female' ? '#f472b6' : '#60a5fa' }}
+              >
+                {globalStatus.gender === 'female' ? '♀' : '♂'}
+              </span>
+              {globalStatus.cooldowns.medicalSeconds > 0 && (
+                <span title={`Medical: ${fmt(globalStatus.cooldowns.medicalSeconds)}`} style={{ color: heat(globalStatus.cooldowns.medicalSeconds, globalStatus.cooldowns.medicalMaxSeconds) }}>
+                  [M]
+                </span>
+              )}
+              {globalStatus.cooldowns.boosterSeconds > 0 && (
+                <span title={`Booster: ${fmt(globalStatus.cooldowns.boosterSeconds)}`} style={{ color: heat(globalStatus.cooldowns.boosterSeconds, globalStatus.cooldowns.boosterMaxSeconds) }}>
+                  [B]
+                </span>
+              )}
+              {globalStatus.cooldowns.drugSeconds > 0 && (
+                <span title={`Stimulant: ${fmt(globalStatus.cooldowns.drugSeconds)}`} style={{ color: heat(globalStatus.cooldowns.drugSeconds, 21600) }}>
+                  [S]
+                </span>
+              )}
             </div>
           </div>
         </header>

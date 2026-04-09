@@ -63,6 +63,45 @@ interface CooldownState {
   drugSeconds: number;
 }
 
+interface AcademyCourse {
+  slug: string;
+  major: string;
+  majorOrder: number;
+  courseOrder: number;
+  displayName: string;
+  durationSeconds: number;
+  bonus: string;
+  completed: boolean;
+  inProgress: boolean;
+}
+
+interface AcademyState {
+  activeCourseSlug?: string | null;
+  startedAt?: string | null;
+  courses: AcademyCourse[];
+}
+
+interface ExchangeState {
+  voxPoints: number;
+  unlocks: Array<{ slug: string; unlockedAt: string }>;
+  catalog: Array<{ slug: string; name: string; costPoints: number }>;
+}
+
+interface MarketState {
+  treasuryFp: number;
+  stocks: Array<{
+    slug: string;
+    name: string;
+    currentPriceFp: number;
+    minPriceFp: number;
+    maxPriceFp: number;
+    lastChangePct: number;
+    blockSize: number;
+    benefits: Array<{ key: string; sharesRequired: number; cooldownSeconds: number; rewardType: string; rewardValue?: number; rewardItem?: string; rewardQuantity?: number }>;
+    sharesOwned: number;
+  }>;
+}
+
 interface CrimeLogEntry {
   id: string;
   approach: string;
@@ -79,6 +118,10 @@ interface VoxCityState {
   inventory: InventoryState;
   inventoryItems: InventoryItem[];
   cooldowns: CooldownState;
+  gender: 'male' | 'female';
+  academy: AcademyState;
+  exchange: ExchangeState;
+  market: MarketState;
   crimeLog: CrimeLogEntry[];
   isDev: boolean;
   activeGym: string;
@@ -153,6 +196,10 @@ const defaultState: VoxCityState = {
   inventory: { scrap: 0, components: 0, rareTech: 0 },
   inventoryItems: [],
   cooldowns: { medicalSeconds: 0, medicalMaxSeconds: 21600, boosterSeconds: 0, boosterMaxSeconds: 86400, drugSeconds: 0 },
+  gender: 'male',
+  academy: { activeCourseSlug: null, startedAt: null, courses: [] },
+  exchange: { voxPoints: 0, unlocks: [], catalog: [] },
+  market: { treasuryFp: 0, stocks: [] },
   crimeLog: [],
   isDev: false,
   activeGym: 'scrap-yard-gym',
@@ -230,6 +277,12 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     const m = Math.floor((clamped % 3600) / 60);
     const s = clamped % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+  const iconHeat = (current: number, max: number) => {
+    const p = Math.max(0, Math.min(1, current / Math.max(1, max)));
+    const r = Math.round(64 + p * 191);
+    const g = Math.round(205 - p * 150);
+    return `rgb(${r},${g},90)`;
   };
   const canUseItem = (item: InventoryItem) => {
     const cooldownType = item.cooldownType ?? (item.category === 'morale' ? 'booster' : 'none');
@@ -629,7 +682,7 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
         { id: 'weapon', label: 'Weapons', icon: '✦' },
         { id: 'armor', label: 'Armor', icon: '⬒' },
         { id: 'medical', label: 'Medical', icon: '+' },
-        { id: 'drug', label: 'Drugs', icon: '◉' },
+        { id: 'drug', label: 'Stimulants', icon: '◉' },
         { id: 'temporary', label: 'Temp', icon: '⌛' },
         { id: 'special', label: 'Special', icon: '◆' },
         { id: 'jewelry', label: 'Jewelry', icon: '◇' },
@@ -690,17 +743,17 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1 border-b border-[#2c3441] bg-[#141a23] px-2 py-1 text-[10px]">
-              <div className={`${state.cooldowns.medicalSeconds > state.cooldowns.medicalMaxSeconds ? 'text-rose-300' : 'text-[#9eb2ca]'}`}>
-                Medical Cooldown: {formatDuration(state.cooldowns.medicalSeconds)} / {formatDuration(state.cooldowns.medicalMaxSeconds)}
+              <div className="grid grid-cols-3 gap-1 border-b border-[#2c3441] bg-[#141a23] px-2 py-1 text-[10px]">
+                <div className={`${state.cooldowns.medicalSeconds > state.cooldowns.medicalMaxSeconds ? 'text-rose-300' : 'text-[#9eb2ca]'}`}>
+                  Medical Cooldown: {formatDuration(state.cooldowns.medicalSeconds)} / {formatDuration(state.cooldowns.medicalMaxSeconds)}
+                </div>
+                <div className={`${state.cooldowns.boosterSeconds > state.cooldowns.boosterMaxSeconds ? 'text-amber-300' : 'text-[#9eb2ca]'}`}>
+                  Booster Cooldown: {formatDuration(state.cooldowns.boosterSeconds)} / {formatDuration(state.cooldowns.boosterMaxSeconds)}
+                </div>
+                <div className={`${state.cooldowns.drugSeconds > 0 ? 'text-violet-300' : 'text-[#9eb2ca]'}`}>
+                  Stimulant Cooldown: {formatDuration(state.cooldowns.drugSeconds)}
+                </div>
               </div>
-              <div className={`${state.cooldowns.boosterSeconds > state.cooldowns.boosterMaxSeconds ? 'text-amber-300' : 'text-[#9eb2ca]'}`}>
-                Booster Cooldown: {formatDuration(state.cooldowns.boosterSeconds)} / {formatDuration(state.cooldowns.boosterMaxSeconds)}
-              </div>
-              <div className={`${state.cooldowns.drugSeconds > 0 ? 'text-violet-300' : 'text-[#9eb2ca]'}`}>
-                Drug Cooldown: {formatDuration(state.cooldowns.drugSeconds)}
-              </div>
-            </div>
 
             <div className="flex items-center justify-between border-b border-[#2c3441] px-2 py-1 text-xs">
               <span className="text-[#dbe4f0]">Your items - {inventoryCategory === 'all' ? 'All' : inventoryCategory}</span>
@@ -809,11 +862,147 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     }
 
     if (section === 'academy') {
+      const groupedMajors = state.academy.courses.reduce<Record<string, AcademyCourse[]>>((acc, course) => {
+        if (!acc[course.major]) acc[course.major] = [];
+        acc[course.major].push(course);
+        return acc;
+      }, {});
+      const activeCourse = state.academy.courses.find((c) => c.slug === state.academy.activeCourseSlug);
+      const academyRemaining = state.academy.startedAt && activeCourse
+        ? Math.max(0, Math.floor((new Date(state.academy.startedAt).getTime() + activeCourse.durationSeconds * 1000 - moraleResetNow) / 1000))
+        : 0;
       return (
-        <div className="rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
-          <h2 className="mb-3 text-lg font-semibold text-[#eef2f8]">Academy</h2>
-          <p>Classes completed: <span className="font-semibold">{state.collegeClasses}</span></p>
-          <button disabled={busy} onClick={() => void runAction('class')} className="mt-3 rounded border border-[#3c4a5d] bg-[#1a2432] px-3 py-2 hover:bg-[#213046] disabled:opacity-60">Take Class (8 Stamina, 5 Morale)</button>
+        <div className="space-y-3 rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+          <h2 className="text-lg font-semibold text-[#eef2f8]">Academy</h2>
+          <p className="text-xs text-[#9fb0c5]">One active course at a time. Real-time completion continues offline.</p>
+          {activeCourse && (
+            <p className="rounded border border-[#3a4659] bg-[#1a2432] px-2 py-1 text-xs text-[#d4e1f2]">
+              Active: {activeCourse.displayName} ({formatDuration(academyRemaining)} remaining)
+            </p>
+          )}
+          <div className="space-y-3">
+            {Object.entries(groupedMajors).map(([major, courses]) => (
+              <div key={major} className="rounded border border-[#344257] bg-[#172130] p-2">
+                <h3 className="mb-2 text-sm font-semibold text-[#e5edf8]">{major}</h3>
+                <div className="space-y-1">
+                  {courses
+                    .sort((a, b) => a.courseOrder - b.courseOrder)
+                    .map((course) => {
+                      const prev = courses.find((c) => c.courseOrder === course.courseOrder - 1);
+                      const canStart = !state.academy.activeCourseSlug && !course.completed && (course.courseOrder === 1 || Boolean(prev?.completed));
+                      return (
+                        <div key={course.slug} className="flex items-center justify-between rounded border border-[#2f3c4f] bg-[#121923] px-2 py-1 text-xs">
+                          <div>
+                            <p className="text-[#dce6f5]">{course.displayName}</p>
+                            <p className="text-[#90a2bb]">{course.bonus} • {formatDuration(course.durationSeconds)}</p>
+                          </div>
+                          {course.completed ? (
+                            <span className="text-emerald-300">Done</span>
+                          ) : course.inProgress ? (
+                            <span className="text-cyan-300">In Progress</span>
+                          ) : (
+                            <button
+                              disabled={busy || !canStart}
+                              onClick={() => void runAction('academy_enroll', { courseSlug: course.slug })}
+                              className="rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
+                            >
+                              Enroll
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (section === 'work') {
+      return (
+        <div className="space-y-3 rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+          <h2 className="text-lg font-semibold text-[#eef2f8]">Vox Exchange</h2>
+          <p className="text-xs text-[#9fb0c5]">Vox Points: <span className="font-semibold text-[#eef2f8]">{state.exchange.voxPoints}</span></p>
+          <div className="space-y-2">
+            {state.exchange.catalog.map((entry) => {
+              const purchased = state.exchange.unlocks.some((u) => u.slug === entry.slug);
+              return (
+                <div key={entry.slug} className="flex items-center justify-between rounded border border-[#344257] bg-[#1a2432] px-2 py-2 text-xs">
+                  <span>{entry.name} ({entry.costPoints} VP)</span>
+                  {purchased ? (
+                    <span className="text-emerald-300">Unlocked</span>
+                  ) : (
+                    <button
+                      disabled={busy || state.exchange.voxPoints < entry.costPoints}
+                      onClick={() => void runAction('exchange_purchase', { unlockSlug: entry.slug })}
+                      className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246] disabled:opacity-40"
+                    >
+                      Buy
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    if (section === 'luck-den') {
+      const marketAccess = state.exchange.unlocks.some((u) => u.slug === 'market-grid-access');
+      return (
+        <div className="space-y-3 rounded border border-[#2f3b4b] bg-[#121923] p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-[#eef2f8]">Market Grid</h2>
+            {state.isDev && (
+              <span className="rounded border border-[#5a4325] bg-[#2b2013] px-2 py-1 text-xs text-[#f3cd8d]">
+                Treasury (FP): {state.market.treasuryFp.toLocaleString()}
+              </span>
+            )}
+          </div>
+          {!marketAccess ? (
+            <p className="text-xs text-[#d9b58e]">Unlock Market Grid Access from Vox Exchange first.</p>
+          ) : (
+            <div className="space-y-2">
+              {state.market.stocks.map((stock) => (
+                <div key={stock.slug} className="rounded border border-[#344257] bg-[#1a2432] p-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#e3ecf9]">{stock.name}</span>
+                    <span className={Number(stock.lastChangePct) >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                      {(Number(stock.lastChangePct) * 100).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-[#9db0c7]">Price: {Number(stock.currentPriceFp).toFixed(6)} FP • Shares: {Number(stock.sharesOwned).toFixed(2)}</p>
+                  <div className="mt-1 flex gap-2">
+                    <button disabled={busy} onClick={() => void runAction('market_buy', { stockSlug: stock.slug, amountFp: 100 })} className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246]">Buy 100 FP</button>
+                    <button disabled={busy || Number(stock.sharesOwned) <= 0} onClick={() => void runAction('market_sell', { stockSlug: stock.slug, shares: Math.max(1, Math.floor(Number(stock.sharesOwned) * 0.1)) })} className="rounded border border-[#3c4a5d] px-2 py-1 hover:bg-[#243246] disabled:opacity-40">Sell 10%</button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {stock.benefits.map((benefit) => {
+                      const progress = Math.max(0, Math.min(100, (Number(stock.sharesOwned) / Number(benefit.sharesRequired || 1)) * 100));
+                      return (
+                        <div key={benefit.key} className="rounded border border-[#2f3c4f] bg-[#121923] p-1">
+                          <p className="text-[11px] text-[#c9d8ea]">{benefit.key} ({benefit.sharesRequired.toLocaleString()} shares)</p>
+                          <div className="mt-1 h-2 rounded bg-[#0f1620]">
+                            <div className="h-full rounded bg-cyan-700" style={{ width: `${progress}%` }} />
+                          </div>
+                          <button
+                            disabled={busy || Number(stock.sharesOwned) < Number(benefit.sharesRequired)}
+                            onClick={() => void runAction('market_claim', { stockSlug: stock.slug, benefitKey: benefit.key })}
+                            className="mt-1 rounded border border-[#3c4a5d] px-2 py-1 text-[11px] hover:bg-[#243246] disabled:opacity-40"
+                          >
+                            Claim
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
@@ -904,6 +1093,13 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                   >
                     +1 OED
                   </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => void runAction('dev_reset_cooldowns')}
+                    className="rounded border border-[#684e2b] bg-[#3d2d18] px-2 py-0.5 text-[11px] text-[#f3cd8d] hover:bg-[#4a361e] disabled:opacity-60"
+                  >
+                    Reset CDs
+                  </button>
                 </div>
               )}
 
@@ -931,6 +1127,29 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                   );
                 })}
               </div>
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-xs">
+              <span
+                title={state.gender === 'female' ? 'Female' : 'Male'}
+                style={{ color: state.gender === 'female' ? '#f472b6' : '#60a5fa' }}
+              >
+                {state.gender === 'female' ? '♀' : '♂'}
+              </span>
+              {state.cooldowns.medicalSeconds > 0 && (
+                <span title={`Medical: ${formatDuration(state.cooldowns.medicalSeconds)}`} style={{ color: iconHeat(state.cooldowns.medicalSeconds, state.cooldowns.medicalMaxSeconds) }}>
+                  [M]
+                </span>
+              )}
+              {state.cooldowns.boosterSeconds > 0 && (
+                <span title={`Booster: ${formatDuration(state.cooldowns.boosterSeconds)}`} style={{ color: iconHeat(state.cooldowns.boosterSeconds, state.cooldowns.boosterMaxSeconds) }}>
+                  [B]
+                </span>
+              )}
+              {state.cooldowns.drugSeconds > 0 && (
+                <span title={`Stimulant: ${formatDuration(state.cooldowns.drugSeconds)}`} style={{ color: iconHeat(state.cooldowns.drugSeconds, 21600) }}>
+                  [S]
+                </span>
+              )}
             </div>
 
             <div className="mt-2 flex flex-wrap gap-2">

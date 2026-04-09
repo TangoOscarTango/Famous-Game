@@ -328,7 +328,9 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
     }
     const gym = state.gyms.find((g) => g.slug === slug);
     if (gym && state.totalGymEnergySpent < gym.energyRequired) {
-      return `Need ${state.totalGymEnergySpent.toLocaleString()} / ${gym.energyRequired.toLocaleString()} lifetime gym energy spent.`;
+      return state.isDev
+        ? `Need ${state.totalGymEnergySpent.toLocaleString()} / ${gym.energyRequired.toLocaleString()} lifetime gym energy spent.`
+        : 'Spend more energy in training to unlock this gym.';
     }
     return 'Gym is locked.';
   };
@@ -537,7 +539,9 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
               <div className="rounded border border-[#344257] bg-[#1a2432] px-2 py-2 text-xs text-[#c6d5e8]">
                 Active Gym: <span className="font-semibold text-[#eef2f8]">{activeGym?.displayName ?? 'None'}</span>
                 <div className="text-[#90a2bb]">{activeGym?.energyPerTrain ?? 5} Stamina per train</div>
-                <div className="text-[#90a2bb]">Lifetime Gym Energy Spent: {state.totalGymEnergySpent.toLocaleString()}</div>
+                {state.isDev && (
+                  <div className="text-[#90a2bb]">Lifetime Gym Energy Spent: {state.totalGymEnergySpent.toLocaleString()}</div>
+                )}
               </div>
               <label className="text-xs text-[#9aacc3]">
                 Train count
@@ -683,17 +687,19 @@ const VoxCity: React.FC<VoxCityProps> = ({ onBackToHub, onOpenAuth }) => {
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 rounded border border-[#2f3c4f] bg-[#121923] p-2 text-xs">
-                  <p className="mb-1 text-[#cfe0f4]">
-                    Energy Progress: {state.totalGymEnergySpent.toLocaleString()} / {selectedGym.energyRequired.toLocaleString()}
-                  </p>
-                  <div className="h-2 rounded bg-[#0f1620]">
-                    <div
-                      className="h-full rounded bg-cyan-700"
-                      style={{ width: `${Math.max(0, Math.min(100, (state.totalGymEnergySpent / Math.max(1, selectedGym.energyRequired)) * 100))}%` }}
-                    />
+                {state.isDev && (
+                  <div className="mt-3 rounded border border-[#2f3c4f] bg-[#121923] p-2 text-xs">
+                    <p className="mb-1 text-[#cfe0f4]">
+                      Energy Progress: {state.totalGymEnergySpent.toLocaleString()} / {selectedGym.energyRequired.toLocaleString()}
+                    </p>
+                    <div className="h-2 rounded bg-[#0f1620]">
+                      <div
+                        className="h-full rounded bg-cyan-700"
+                        style={{ width: `${Math.max(0, Math.min(100, (state.totalGymEnergySpent / Math.max(1, selectedGym.energyRequired)) * 100))}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

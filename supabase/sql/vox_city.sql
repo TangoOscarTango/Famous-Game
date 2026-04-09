@@ -147,6 +147,11 @@ begin
 end
 $$;
 
+-- Prevent sort_order collisions on existing deployments before reseeding gym rows.
+update public.vox_city_gyms
+set sort_order = sort_order + 1000
+where sort_order between 1 and 999;
+
 -- Legacy gym slug migration before new progression data.
 update public.vox_city_profiles
 set active_gym = 'shoreline-brawlers'
